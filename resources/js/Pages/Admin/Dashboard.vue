@@ -1,29 +1,15 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
-import InputError from '@/Components/InputError.vue';
-import InputLabel from '@/Components/InputLabel.vue';
-import PrimaryButton from '@/Components/PrimaryButton.vue';
 import SecondaryButton from '@/Components/SecondaryButton.vue';
-import TextInput from '@/Components/TextInput.vue';
-import { Head, router, useForm } from '@inertiajs/vue3';
+import { Head, Link, router } from '@inertiajs/vue3';
 import { ref } from 'vue';
 
 const props = defineProps({
     stats: Object,
     users: Array,
-    supervisors: Array,
 });
 
 const tab = ref('users');
-
-const form = useForm({
-    name: '',
-    email: '',
-    password: '',
-    role: 'employee',
-    account_status: 'active',
-    supervisor_id: '',
-});
 
 function roleBadge(role) {
     if (role === 'employee') return 'bg-sky-50 text-sky-800 ring-sky-100';
@@ -33,16 +19,6 @@ function roleBadge(role) {
 
 function statusBadge(status) {
     return status === 'active' ? 'bg-emerald-50 text-emerald-800 ring-emerald-100' : 'bg-slate-100 text-slate-700 ring-slate-200';
-}
-
-function submitUser() {
-    form.transform((data) => ({
-        ...data,
-        supervisor_id: data.role === 'employee' && data.supervisor_id ? data.supervisor_id : null,
-    })).post(route('admin.users.store'), {
-        preserveScroll: true,
-        onSuccess: () => form.reset('password', 'name', 'email'),
-    });
 }
 
 function destroyUser(id) {
@@ -102,56 +78,12 @@ function destroyUser(id) {
                 <div v-show="tab === 'users'" class="space-y-4">
                     <div class="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
                         <h3 class="text-lg font-semibold text-slate-900">Manage Users</h3>
+                        <Link :href="route('admin.users.index')" class="inline-flex rounded-md bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700">
+                            Open user management
+                        </Link>
                     </div>
 
-                    <div class="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-                        <h4 class="text-sm font-semibold text-slate-900">Add user</h4>
-                        <form class="mt-4 grid gap-4 md:grid-cols-2" @submit.prevent="submitUser">
-                            <div>
-                                <InputLabel for="name" value="Name" />
-                                <TextInput id="name" v-model="form.name" class="mt-1 block w-full" required />
-                                <InputError class="mt-2" :message="form.errors.name" />
-                            </div>
-                            <div>
-                                <InputLabel for="email" value="Email" />
-                                <TextInput id="email" v-model="form.email" type="email" class="mt-1 block w-full" required />
-                                <InputError class="mt-2" :message="form.errors.email" />
-                            </div>
-                            <div>
-                                <InputLabel for="password" value="Temporary password" />
-                                <TextInput id="password" v-model="form.password" type="password" class="mt-1 block w-full" required />
-                                <InputError class="mt-2" :message="form.errors.password" />
-                            </div>
-                            <div>
-                                <InputLabel for="role" value="Role" />
-                                <select id="role" v-model="form.role" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
-                                    <option value="employee">Employee</option>
-                                    <option value="supervisor">Supervisor</option>
-                                    <option value="administrator">Administrator</option>
-                                </select>
-                            </div>
-                            <div>
-                                <InputLabel for="account_status" value="Status" />
-                                <select id="account_status" v-model="form.account_status" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
-                                    <option value="active">Active</option>
-                                    <option value="inactive">Inactive</option>
-                                </select>
-                            </div>
-                            <div v-if="form.role === 'employee'">
-                                <InputLabel for="supervisor_id" value="Supervisor" />
-                                <select id="supervisor_id" v-model="form.supervisor_id" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
-                                    <option value="">Select supervisor</option>
-                                    <option v-for="s in supervisors" :key="s.id" :value="s.id">{{ s.name }} — {{ s.email }}</option>
-                                </select>
-                                <InputError class="mt-2" :message="form.errors.supervisor_id" />
-                            </div>
-                            <div class="flex items-end">
-                                <PrimaryButton class="bg-amber-600 hover:bg-amber-700 focus:ring-amber-500" :disabled="form.processing">
-                                    + Add User
-                                </PrimaryButton>
-                            </div>
-                        </form>
-                    </div>
+                    <p class="text-sm text-slate-500">Create and edit are now on dedicated pages for safer user administration.</p>
 
                     <div class="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
                         <table class="min-w-full divide-y divide-slate-200 text-sm">
@@ -179,7 +111,22 @@ function destroyUser(id) {
                                         </span>
                                     </td>
                                     <td class="px-4 py-3 text-right">
-                                        <SecondaryButton class="text-rose-700 ring-rose-200" @click="destroyUser(u.id)">Delete</SecondaryButton>
+                                        <div class="flex flex-wrap justify-end gap-2">
+                                            <Link
+                                                v-if="u.role === 'employee'"
+                                                :href="route('admin.users.ratings', u.id)"
+                                                class="inline-flex items-center rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-800 shadow-sm hover:bg-slate-50"
+                                            >
+                                                View ratings
+                                            </Link>
+                                            <Link
+                                                :href="route('admin.users.edit', u.id)"
+                                                class="inline-flex items-center rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-800 shadow-sm hover:bg-slate-50"
+                                            >
+                                                Edit
+                                            </Link>
+                                            <SecondaryButton class="text-rose-700 ring-rose-200" @click="destroyUser(u.id)">Delete</SecondaryButton>
+                                        </div>
                                     </td>
                                 </tr>
                             </tbody>

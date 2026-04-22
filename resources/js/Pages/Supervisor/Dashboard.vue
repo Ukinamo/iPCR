@@ -18,19 +18,85 @@ const selectedSubmission = ref(null);
 
 const reviewForm = useForm({
     action: 'approve',
-    quality: 5,
-    efficiency: 5,
-    timeliness: 5,
     supervisor_feedback: '',
+    commitments: [],
 });
+
+function accomplishmentRatio(q3Target, q3Actual, q4Target, q4Actual) {
+    const t3 = Number(q3Target || 0);
+    const a3 = Number(q3Actual || 0);
+    const t4 = Number(q4Target || 0);
+    const a4 = Number(q4Actual || 0);
+    const targetTotal = Math.max(0, t3 + t4);
+    const actualTotal = Math.max(0, a3 + a4);
+    const percent = targetTotal > 0 ? actualTotal / targetTotal : 0;
+
+    return {
+        targetTotal,
+        actualTotal,
+        percent,
+    };
+}
+
+function qualityFromRatio(n) {
+    if (n >= 1.3) return 5;
+    if (n >= 1.15) return 4;
+    if (n >= 1.0) return 3;
+    if (n >= 0.51) return 2;
+    return 1;
+}
+
+function rowPreview(commitment, row) {
+    const ratio = accomplishmentRatio(
+        row.rating_q3_target,
+        row.rating_q3_actual,
+        row.rating_q4_target,
+        row.rating_q4_actual,
+    );
+    const q = qualityFromRatio(ratio.percent);
+    const e = Number(row.rating_efficiency);
+    const t = Number(row.rating_timeliness);
+    if (!Number.isFinite(e) || !Number.isFinite(t)) {
+        return { ...ratio, q, avg: null, weighted: null };
+    }
+    const avg = (q + e + t) / 3;
+    const w = Number(commitment.weight) / 100;
+    const weighted = avg * w;
+    return { ...ratio, q, avg, weighted };
+}
+
+function sumWeightedPreview() {
+    if (!selectedSubmission.value) return null;
+    const sorted = [...(selectedSubmission.value.commitments || [])].sort((a, b) => a.id - b.id);
+    let sum = 0;
+    for (const c of sorted) {
+        const row = reviewForm.commitments.find((r) => r.id === c.id);
+        if (!row) {
+            return null;
+        }
+        const p = rowPreview(c, row);
+        if (p.weighted == null) {
+            return null;
+        }
+        sum += p.weighted;
+    }
+    return sum;
+}
 
 function openReview(submission) {
     selectedSubmission.value = submission;
     reviewForm.reset();
     reviewForm.action = 'approve';
-    reviewForm.quality = 5;
-    reviewForm.efficiency = 5;
-    reviewForm.timeliness = 5;
+    const sorted = [...(submission.commitments || [])].sort((a, b) => a.id - b.id);
+    reviewForm.commitments = sorted.map((c) => ({
+        id: c.id,
+        rating_efficiency: 3,
+        rating_timeliness: 3,
+        rating_q3_target: '',
+        rating_q3_actual: '',
+        rating_q4_target: '',
+        rating_q4_actual: '',
+    }));
 }
 
 function closeReview() {
@@ -39,7 +105,27 @@ function closeReview() {
 
 function submitReview() {
     if (!selectedSubmission.value) return;
-    reviewForm.patch(route('supervisor.submissions.update', selectedSubmission.value.id), {
+    reviewForm.transform((data) => {
+        if (data.action !== 'approve') {
+            return {
+                action: data.action,
+                supervisor_feedback: data.supervisor_feedback,
+            };
+        }
+        return {
+            action: data.action,
+            supervisor_feedback: data.supervisor_feedback,
+            commitments: data.commitments.map((r) => ({
+                id: r.id,
+                rating_efficiency: Number(r.rating_efficiency),
+                rating_timeliness: Number(r.rating_timeliness),
+                rating_q3_target: r.rating_q3_target === '' || r.rating_q3_target == null ? 0 : Number(r.rating_q3_target),
+                rating_q3_actual: r.rating_q3_actual === '' || r.rating_q3_actual == null ? 0 : Number(r.rating_q3_actual),
+                rating_q4_target: r.rating_q4_target === '' || r.rating_q4_target == null ? 0 : Number(r.rating_q4_target),
+                rating_q4_actual: r.rating_q4_actual === '' || r.rating_q4_actual == null ? 0 : Number(r.rating_q4_actual),
+            })),
+        };
+    }).patch(route('supervisor.submissions.update', selectedSubmission.value.id), {
         preserveScroll: true,
         onSuccess: () => {
             selectedSubmission.value = null;
@@ -78,6 +164,10 @@ function formatWhen(iso) {
 function periodLabel(s) {
     return `Q${s.evaluation_quarter} ${s.evaluation_year}`;
 }
+
+function ratingRow(commitmentId) {
+    return reviewForm.commitments.find((r) => r.id === commitmentId);
+}
 </script>
 
 <template>
@@ -87,7 +177,10 @@ function periodLabel(s) {
         <template #header>
             <div>
                 <h2 class="text-xl font-semibold leading-tight text-gray-800">Welcome, Supervisor</h2>
-                <p class="text-sm text-gray-500">Review commitments, apply SPMS ratings, or return packages with clear guidance.</p>
+                <p class="text-sm text-gray-500">
+                    Rate each commitment using IPCR Form 1 rules: Quality from accomplishment (or progress %), Efficiency and Timeliness (1–5), then
+                    weighted scores sum to the package overall.
+                </p>
             </div>
         </template>
 
@@ -107,7 +200,7 @@ function periodLabel(s) {
                         <p class="mt-2 text-3xl font-bold">{{ stats.pendingReview }}</p>
                     </div>
                     <div class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-                        <p class="text-sm text-slate-600">Average Rating</p>
+                        <p class="text-sm text-slate-600">Average overall</p>
                         <p class="mt-2 text-3xl font-bold">{{ stats.averageRating }}</p>
                     </div>
                 </div>
@@ -122,7 +215,7 @@ function periodLabel(s) {
                         :class="tab === 'summary' ? 'bg-white shadow-sm' : ''"
                         @click="tab = 'summary'"
                     >
-                        Rating Summary
+                        Rating guide
                     </button>
                 </div>
 
@@ -138,7 +231,7 @@ function periodLabel(s) {
                                     <p class="font-semibold text-slate-900">{{ s.employee.name }}</p>
                                     <p class="text-xs text-slate-500">{{ periodLabel(s) }} · Submitted {{ formatWhen(s.submitted_at) }}</p>
                                     <p v-if="s.commitments?.length" class="mt-1 text-xs text-slate-600">{{ s.commitments.length }} commitment(s) in package</p>
-                                    <p v-if="s.overall_rating" class="mt-1 text-sm font-semibold text-amber-700">Rating: {{ s.overall_rating }}</p>
+                                    <p v-if="s.overall_rating" class="mt-1 text-sm font-semibold text-amber-700">Overall: {{ s.overall_rating }}</p>
                                 </div>
                             </div>
                             <div class="flex flex-wrap items-center gap-2">
@@ -152,14 +245,20 @@ function periodLabel(s) {
                 </div>
 
                 <div v-show="tab === 'summary'" class="rounded-xl border border-slate-200 bg-white p-6 shadow-sm text-sm text-slate-600">
-                    <p>
-                        SPMS aggregate rating uses the mean of Quality, Efficiency, and Timeliness (1–5). Each submission should reflect the
-                        employee’s full commitment set for the quarter (60% core / 40% strategic) before you approve.
-                    </p>
+                    <p class="font-semibold text-slate-800">IPCR Form 1 (sample workbook logic)</p>
+                    <ul class="mt-2 list-disc space-y-1 pl-5">
+                        <li>Accomplishment ratio = (Q3 actual + Q4 actual) ÷ (Q3 target + Q4 target), exactly like the workbook.</li>
+                        <li>
+                            Quality (auto) from ratio: ≥130% → 5, ≥115% → 4, ≥100% → 3, ≥51% → 2, else 1 — matching the sample thresholds expressed as
+                            decimals.
+                        </li>
+                        <li>Efficiency and Timeliness are your 1–5 judgments per commitment.</li>
+                        <li>Average = (Q + E + T) ÷ 3. Weighted = Average × (commitment weight ÷ 100). Package overall = sum of weighted scores.</li>
+                    </ul>
                 </div>
 
                 <div v-if="selectedSubmission" class="fixed inset-0 z-40 flex items-center justify-center bg-black/50 p-4" @click.self="closeReview">
-                    <div class="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-xl bg-white p-6 shadow-2xl">
+                    <div class="max-h-[92vh] w-full max-w-5xl overflow-y-auto rounded-xl bg-white p-6 shadow-2xl">
                         <div class="flex flex-wrap items-start justify-between gap-3 border-b border-slate-100 pb-4">
                             <div>
                                 <p class="text-xs font-semibold uppercase text-slate-500">Review IPCR package</p>
@@ -170,40 +269,111 @@ function periodLabel(s) {
                         </div>
 
                         <div class="mt-4">
-                            <p class="text-sm font-semibold text-slate-800">Commitments in this submission</p>
-                            <div class="mt-2 overflow-hidden rounded-lg border border-slate-200">
-                                <table class="min-w-full divide-y divide-slate-200 text-sm">
-                                    <thead class="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                            <p class="text-sm font-semibold text-slate-800">Per-commitment ratings</p>
+                            <p class="mt-1 text-xs text-slate-500">
+                                Optional accomplishment totals match the workbook (M÷L). Leave both blank to derive Quality from the employee’s progress
+                                %.
+                            </p>
+                            <div class="mt-2 overflow-x-auto overflow-hidden rounded-lg border border-slate-200">
+                                <table class="min-w-full divide-y divide-slate-200 text-xs sm:text-sm">
+                                    <thead class="bg-slate-50 text-left text-[10px] font-semibold uppercase tracking-wide text-slate-500 sm:text-xs">
                                         <tr>
-                                            <th class="px-3 py-2">Title</th>
-                                            <th class="px-3 py-2">Type</th>
-                                            <th class="px-3 py-2">Weight</th>
-                                            <th class="px-3 py-2">Progress</th>
+                                            <th class="px-2 py-2">Commitment</th>
+                                            <th class="px-2 py-2">Wt%</th>
+                                            <th class="px-2 py-2">Prog%</th>
+                                            <th class="px-2 py-2">Q3 Tgt</th>
+                                            <th class="px-2 py-2">Q3 Act</th>
+                                            <th class="px-2 py-2">Q4 Tgt</th>
+                                            <th class="px-2 py-2">Q4 Act</th>
+                                            <th class="px-2 py-2">Tot Tgt</th>
+                                            <th class="px-2 py-2">Tot Act</th>
+                                            <th class="px-2 py-2">%</th>
+                                            <th class="px-2 py-2">E</th>
+                                            <th class="px-2 py-2">T</th>
+                                            <th class="px-2 py-2">Q*</th>
+                                            <th class="px-2 py-2">Avg</th>
+                                            <th class="px-2 py-2">Wtd</th>
                                         </tr>
                                     </thead>
                                     <tbody class="divide-y divide-slate-100">
-                                        <tr v-for="c in selectedSubmission.commitments || []" :key="c.id">
-                                            <td class="px-3 py-2">
-                                                <span class="font-medium text-slate-900">{{ c.title }}</span>
-                                                <p v-if="c.description" class="mt-1 text-xs text-slate-600">{{ c.description }}</p>
-                                            </td>
-                                            <td class="px-3 py-2 capitalize text-slate-700">{{ c.function_type }}</td>
-                                            <td class="px-3 py-2 text-slate-800">{{ Number(c.weight) }}%</td>
-                                            <td class="px-3 py-2">
-                                                <div class="h-1.5 w-24 overflow-hidden rounded-full bg-slate-100">
-                                                    <div class="h-1.5 rounded-full bg-blue-600" :style="{ width: c.progress + '%' }" />
-                                                </div>
-                                                <span class="text-xs text-slate-500">{{ c.progress }}%</span>
-                                            </td>
-                                        </tr>
+                                        <template v-for="c in [...(selectedSubmission.commitments || [])].sort((a, b) => a.id - b.id)" :key="c.id">
+                                            <tr>
+                                                <td class="px-2 py-2">
+                                                    <span class="font-medium text-slate-900">{{ c.title }}</span>
+                                                    <p class="text-[10px] capitalize text-slate-500 sm:text-xs">{{ c.function_type }}</p>
+                                                </td>
+                                                <td class="px-2 py-2">{{ Number(c.weight) }}</td>
+                                                <td class="px-2 py-2">{{ c.progress }}</td>
+                                                <td class="px-2 py-2" v-if="ratingRow(c.id)">
+                                                    <TextInput v-model="ratingRow(c.id).rating_q3_target" type="number" step="any" class="w-20 text-xs" />
+                                                </td>
+                                                <td class="px-2 py-2" v-if="ratingRow(c.id)">
+                                                    <TextInput v-model="ratingRow(c.id).rating_q3_actual" type="number" step="any" class="w-20 text-xs" />
+                                                </td>
+                                                <td class="px-2 py-2" v-if="ratingRow(c.id)">
+                                                    <TextInput v-model="ratingRow(c.id).rating_q4_target" type="number" step="any" class="w-20 text-xs" />
+                                                </td>
+                                                <td class="px-2 py-2" v-if="ratingRow(c.id)">
+                                                    <TextInput v-model="ratingRow(c.id).rating_q4_actual" type="number" step="any" class="w-20 text-xs" />
+                                                </td>
+                                                <td class="px-2 py-2 text-slate-700" v-if="ratingRow(c.id)">
+                                                    {{ rowPreview(c, ratingRow(c.id)).targetTotal.toFixed(2) }}
+                                                </td>
+                                                <td class="px-2 py-2 text-slate-700" v-if="ratingRow(c.id)">
+                                                    {{ rowPreview(c, ratingRow(c.id)).actualTotal.toFixed(2) }}
+                                                </td>
+                                                <td class="px-2 py-2 text-slate-700" v-if="ratingRow(c.id)">
+                                                    {{ (rowPreview(c, ratingRow(c.id)).percent * 100).toFixed(0) }}%
+                                                </td>
+                                                <td class="px-2 py-2" v-if="ratingRow(c.id)">
+                                                    <TextInput v-model="ratingRow(c.id).rating_efficiency" type="number" min="1" max="5" class="w-14 text-xs" />
+                                                </td>
+                                                <td class="px-2 py-2" v-if="ratingRow(c.id)">
+                                                    <TextInput v-model="ratingRow(c.id).rating_timeliness" type="number" min="1" max="5" class="w-14 text-xs" />
+                                                </td>
+                                                <td class="px-2 py-2 text-slate-700" v-if="ratingRow(c.id)">
+                                                    {{ rowPreview(c, ratingRow(c.id)).q }}
+                                                </td>
+                                                <td class="px-2 py-2 text-slate-700" v-if="ratingRow(c.id)">
+                                                    {{ rowPreview(c, ratingRow(c.id)).avg != null ? rowPreview(c, ratingRow(c.id)).avg.toFixed(3) : '—' }}
+                                                </td>
+                                                <td class="px-2 py-2 text-slate-700" v-if="ratingRow(c.id)">
+                                                    {{ rowPreview(c, ratingRow(c.id)).weighted != null ? rowPreview(c, ratingRow(c.id)).weighted.toFixed(4) : '—' }}
+                                                </td>
+                                            </tr>
+                                            <tr v-if="c.accomplishments?.length" class="bg-slate-50/80">
+                                                <td colspan="15" class="px-2 py-2 text-xs text-slate-600">
+                                                    <p class="font-semibold text-slate-700">Employee evidence</p>
+                                                    <ul class="mt-1 list-inside list-disc space-y-1">
+                                                        <li v-for="ev in c.accomplishments" :key="ev.id">
+                                                            <span class="font-medium text-slate-800">{{ ev.title }}</span>
+                                                            <span v-if="ev.description"> — {{ ev.description }}</span>
+                                                            <a
+                                                                v-if="ev.file_url"
+                                                                :href="ev.file_url"
+                                                                target="_blank"
+                                                                rel="noopener noreferrer"
+                                                                class="ml-1 font-semibold text-blue-700 hover:underline"
+                                                            >
+                                                                [file]
+                                                            </a>
+                                                        </li>
+                                                    </ul>
+                                                </td>
+                                            </tr>
+                                        </template>
                                     </tbody>
                                 </table>
                             </div>
+                            <p v-if="reviewForm.action === 'approve' && sumWeightedPreview() != null" class="mt-2 text-sm font-semibold text-amber-800">
+                                Package overall (preview): {{ sumWeightedPreview().toFixed(4) }}
+                            </p>
+                            <InputError class="mt-2" :message="reviewForm.errors.commitments" />
                         </div>
 
                         <div class="mt-6 border-t border-slate-100 pt-4">
                             <p class="text-sm font-semibold text-slate-800">Decision</p>
-                            <p class="mt-1 text-xs text-slate-500">Approve with SPMS Q/E/T scores, or return with actionable comments (min. 20 characters).</p>
+                            <p class="mt-1 text-xs text-slate-500">Approve after completing each row, or return with actionable comments (min. 20 characters).</p>
 
                             <div class="mt-3 flex gap-2">
                                 <button
@@ -222,22 +392,6 @@ function periodLabel(s) {
                                 >
                                     Return for revision
                                 </button>
-                            </div>
-
-                            <div v-if="reviewForm.action === 'approve'" class="mt-4 grid gap-3 sm:grid-cols-3">
-                                <div>
-                                    <InputLabel value="Quality (1–5)" />
-                                    <TextInput v-model="reviewForm.quality" type="number" min="1" max="5" class="mt-1 block w-full" />
-                                    <InputError class="mt-1" :message="reviewForm.errors.quality" />
-                                </div>
-                                <div>
-                                    <InputLabel value="Efficiency (1–5)" />
-                                    <TextInput v-model="reviewForm.efficiency" type="number" min="1" max="5" class="mt-1 block w-full" />
-                                </div>
-                                <div>
-                                    <InputLabel value="Timeliness (1–5)" />
-                                    <TextInput v-model="reviewForm.timeliness" type="number" min="1" max="5" class="mt-1 block w-full" />
-                                </div>
                             </div>
 
                             <div class="mt-4">

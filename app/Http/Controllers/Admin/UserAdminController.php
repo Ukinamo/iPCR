@@ -11,9 +11,34 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
+use Inertia\Inertia;
+use Inertia\Response;
 
 class UserAdminController extends Controller
 {
+    public function index(): Response
+    {
+        return Inertia::render('Admin/Users/Index', [
+            'users' => User::query()->orderBy('name')->get(),
+            'supervisors' => $this->supervisors(),
+        ]);
+    }
+
+    public function create(): Response
+    {
+        return Inertia::render('Admin/Users/Create', [
+            'supervisors' => $this->supervisors(),
+        ]);
+    }
+
+    public function edit(User $user): Response
+    {
+        return Inertia::render('Admin/Users/Edit', [
+            'user' => $user,
+            'supervisors' => $this->supervisors(),
+        ]);
+    }
+
     public function store(Request $request): RedirectResponse
     {
         $data = $request->validate([
@@ -45,7 +70,7 @@ class UserAdminController extends Controller
 
         AuditLogger::log($request->user()->id, 'user.created', $user, null, $request);
 
-        return back()->with('status', 'User created.');
+        return to_route('admin.users.index')->with('status', 'User created.');
     }
 
     public function update(Request $request, User $user): RedirectResponse
@@ -84,7 +109,7 @@ class UserAdminController extends Controller
 
         AuditLogger::log($request->user()->id, 'user.updated', $user, null, $request);
 
-        return back()->with('status', 'User updated.');
+        return to_route('admin.users.index')->with('status', 'User updated.');
     }
 
     public function destroy(Request $request, User $user): RedirectResponse
@@ -95,6 +120,14 @@ class UserAdminController extends Controller
 
         AuditLogger::log($request->user()->id, 'user.deleted', null, ['deleted_user_id' => $user->id], $request);
 
-        return back()->with('status', 'User removed.');
+        return to_route('admin.users.index')->with('status', 'User removed.');
+    }
+
+    private function supervisors()
+    {
+        return User::query()
+            ->where('role', UserRole::Supervisor)
+            ->orderBy('name')
+            ->get(['id', 'name', 'email']);
     }
 }

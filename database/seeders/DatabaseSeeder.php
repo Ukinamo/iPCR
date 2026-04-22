@@ -8,7 +8,7 @@ use App\Enums\SubmissionStatus;
 use App\Models\Commitment;
 use App\Models\IpcrSubmission;
 use App\Models\User;
-use App\Services\SpmsRatingCalculator;
+use App\Services\IpcrFormRatingCalculator;
 use Illuminate\Database\Seeder;
 
 class DatabaseSeeder extends Seeder
@@ -103,15 +103,15 @@ class DatabaseSeeder extends Seeder
             'evaluation_year' => $year,
             'evaluation_quarter' => $quarter,
             'status' => SubmissionStatus::Approved,
-            'quality' => 5,
-            'efficiency' => 4,
-            'timeliness' => 5,
-            'overall_rating' => SpmsRatingCalculator::overall(5, 4, 5),
+            'quality' => null,
+            'efficiency' => null,
+            'timeliness' => null,
+            'overall_rating' => null,
             'submitted_at' => now()->subDays(10),
             'reviewed_at' => now()->subDays(2),
         ]);
 
-        Commitment::create([
+        $juanC1 = Commitment::create([
             'user_id' => $juan->id,
             'ipcr_submission_id' => $juanSubmission->id,
             'evaluation_year' => $year,
@@ -125,7 +125,7 @@ class DatabaseSeeder extends Seeder
             'status' => CommitmentStatus::Approved,
         ]);
 
-        Commitment::create([
+        $juanC2 = Commitment::create([
             'user_id' => $juan->id,
             'ipcr_submission_id' => $juanSubmission->id,
             'evaluation_year' => $year,
@@ -137,6 +137,34 @@ class DatabaseSeeder extends Seeder
             'weight' => 40,
             'progress' => 100,
             'status' => CommitmentStatus::Approved,
+        ]);
+
+        $ratio = 1.0;
+        $s1 = IpcrFormRatingCalculator::scoreRow(5, 5, 60.0, $ratio);
+        $s2 = IpcrFormRatingCalculator::scoreRow(4, 5, 40.0, $ratio);
+
+        $juanC1->update([
+            'rating_actual_total' => null,
+            'rating_target_total' => null,
+            'rating_quality' => $s1['quality'],
+            'rating_efficiency' => 5,
+            'rating_timeliness' => 5,
+            'rating_average' => $s1['average'],
+            'rating_weighted' => $s1['weighted'],
+        ]);
+
+        $juanC2->update([
+            'rating_actual_total' => null,
+            'rating_target_total' => null,
+            'rating_quality' => $s2['quality'],
+            'rating_efficiency' => 4,
+            'rating_timeliness' => 5,
+            'rating_average' => $s2['average'],
+            'rating_weighted' => $s2['weighted'],
+        ]);
+
+        $juanSubmission->update([
+            'overall_rating' => round($s1['weighted'] + $s2['weighted'], 2),
         ]);
 
         $this->command?->info('I-PERFORM demo (password: password)');
