@@ -14,6 +14,10 @@ defineProps({
     status: {
         type: String,
     },
+    loginPreset: {
+        type: String,
+        default: null,
+    },
 });
 
 const form = useForm({
@@ -32,6 +36,12 @@ const submit = () => {
 <template>
     <GuestLayout>
         <Head title="Log in" />
+
+        <div v-if="loginPreset" class="mb-4 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+            Signing in as
+            <span class="font-semibold text-slate-900">{{ loginPreset }}</span>
+            portal (any account with matching role works).
+        </div>
 
         <div v-if="status" class="mb-4 text-sm font-medium text-green-600">
             {{ status }}
