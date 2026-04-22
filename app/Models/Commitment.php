@@ -15,6 +15,7 @@ class Commitment extends Model
         'evaluation_quarter',
         'period_label',
         'title',
+        'description',
         'function_type',
         'weight',
         'progress',

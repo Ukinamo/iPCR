@@ -12,6 +12,10 @@ class AccomplishmentController extends Controller
 {
     public function store(Request $request): RedirectResponse
     {
+        $request->merge([
+            'commitment_id' => $request->filled('commitment_id') ? $request->input('commitment_id') : null,
+        ]);
+
         $data = $request->validate([
             'title' => ['required', 'string', 'max:255'],
             'description' => ['nullable', 'string', 'max:5000'],

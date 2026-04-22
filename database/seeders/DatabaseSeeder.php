@@ -16,14 +16,14 @@ class DatabaseSeeder extends Seeder
     public function run(): void
     {
         User::factory()->administrator()->create([
-            'name' => 'Ray Administrator',
-            'email' => 'ray@gmail.com',
+            'name' => 'Rey Administrator',
+            'email' => 'rey@admin.com',
             'password' => 'password',
         ]);
 
         $supervisor = User::factory()->supervisor()->create([
             'name' => 'Rey Supervisor',
-            'email' => 'rey@gmail.com',
+            'email' => 'rey@supervisor.com',
             'password' => 'password',
         ]);
 
@@ -76,6 +76,7 @@ class DatabaseSeeder extends Seeder
             'evaluation_quarter' => $quarter,
             'period_label' => $periodLabel,
             'title' => 'Conduct staff training on IPCR system',
+            'description' => 'Roll out I-PERFORM orientation to regional HEI focal persons; track attendance sheets.',
             'function_type' => 'core',
             'weight' => 60,
             'progress' => 100,
@@ -89,6 +90,7 @@ class DatabaseSeeder extends Seeder
             'evaluation_quarter' => $quarter,
             'period_label' => $periodLabel,
             'title' => 'Prepare institutional performance report',
+            'description' => 'Consolidate Q outputs vs targets for MIMAROPA HEIs; align narrative with SPMS indicators.',
             'function_type' => 'strategic',
             'weight' => 40,
             'progress' => 45,
@@ -116,15 +118,30 @@ class DatabaseSeeder extends Seeder
             'evaluation_quarter' => $quarter,
             'period_label' => $periodLabel,
             'title' => 'Regional monitoring visits',
+            'description' => 'Field validation of compliance indicators across sample HEIs.',
             'function_type' => 'core',
             'weight' => 60,
             'progress' => 100,
             'status' => CommitmentStatus::Approved,
         ]);
 
+        Commitment::create([
+            'user_id' => $juan->id,
+            'ipcr_submission_id' => $juanSubmission->id,
+            'evaluation_year' => $year,
+            'evaluation_quarter' => $quarter,
+            'period_label' => $periodLabel,
+            'title' => 'Stakeholder engagement and reporting',
+            'description' => 'Quarterly synthesis of policy feedback and risk notes for regional council.',
+            'function_type' => 'strategic',
+            'weight' => 40,
+            'progress' => 100,
+            'status' => CommitmentStatus::Approved,
+        ]);
+
         $this->command?->info('I-PERFORM demo (password: password)');
-        $this->command?->info('Administrator: ray@gmail.com');
-        $this->command?->info('Supervisor: rey@gmail.com');
+        $this->command?->info('Administrator: rey@admin.com');
+        $this->command?->info('Supervisor: rey@supervisor.com');
         $this->command?->info('Employees: maria.santos@ched.gov.ph, juan.delacruz@ched.gov.ph, ana.rodriguez@ched.gov.ph');
     }
 }

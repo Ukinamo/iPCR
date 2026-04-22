@@ -8,8 +8,10 @@ use App\Http\Controllers\Controller;
 use App\Models\Commitment;
 use App\Models\IpcrSubmission;
 use App\Services\AuditLogger;
+use App\Services\CommitmentWeightRules;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 
 class SubmissionController extends Controller
 {
@@ -22,6 +24,12 @@ class SubmissionController extends Controller
 
         $user = $request->user();
 
+        if ($user->supervisor_id === null) {
+            throw ValidationException::withMessages([
+                'evaluation_quarter' => 'You must be assigned to a supervisor before you can submit an IPCR package. Contact an administrator.',
+            ]);
+        }
+
         $commitments = Commitment::query()
             ->where('user_id', $user->id)
             ->where('evaluation_year', $data['evaluation_year'])
@@ -31,6 +39,12 @@ class SubmissionController extends Controller
 
         if ($commitments->isEmpty()) {
             return back()->withErrors(['evaluation_quarter' => 'Add at least one commitment for this period before submitting.']);
+        }
+
+        $totals = CommitmentWeightRules::totalsForSubmissionBatch($commitments);
+        $splitError = CommitmentWeightRules::submissionErrorIfInvalid($totals['core'], $totals['strategic']);
+        if ($splitError !== null) {
+            return back()->withErrors(['evaluation_quarter' => $splitError]);
         }
 
         $submission = IpcrSubmission::query()->firstOrNew([

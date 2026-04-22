@@ -50,6 +50,8 @@ class RegisteredUserController extends Controller
 
         Auth::login($user);
 
+        $request->session()->forget('login_portal_role');
+
         return redirect(route('dashboard', absolute: false));
     }
 }

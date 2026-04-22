@@ -32,7 +32,7 @@ const submit = () => {
 </script>
 
 <template>
-    <GuestLayout>
+    <GuestLayout :back-href="route('login')" back-label="Back to sign in">
         <Head title="Reset Password" />
 
         <form @submit.prevent="submit">

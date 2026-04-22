@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Auth;
 
 use App\Enums\AccountStatus;
+use App\Enums\UserRole;
 use Illuminate\Auth\Events\Lockout;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
@@ -57,6 +58,22 @@ class LoginRequest extends FormRequest
             throw ValidationException::withMessages([
                 'email' => 'This account is inactive. Contact an administrator.',
             ]);
+        }
+
+        $expectedPortal = $this->session()->get('login_portal_role');
+        if (is_string($expectedPortal) && ($expectedEnum = UserRole::tryFrom($expectedPortal))) {
+            if (Auth::user()->role !== $expectedEnum) {
+                $actualLabel = Auth::user()->role->label();
+                Auth::logout();
+
+                throw ValidationException::withMessages([
+                    'email' => sprintf(
+                        'You opened the %s sign-in page, but this account is %s. Go back to the role portal and pick the matching role, or use the correct account.',
+                        $expectedEnum->label(),
+                        $actualLabel,
+                    ),
+                ]);
+            }
         }
 
         RateLimiter::clear($this->throttleKey());

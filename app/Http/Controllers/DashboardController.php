@@ -8,6 +8,7 @@ use App\Enums\UserRole;
 use App\Models\Commitment;
 use App\Models\IpcrSubmission;
 use App\Models\User;
+use App\Services\CommitmentWeightRules;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -48,10 +49,20 @@ class DashboardController extends Controller
             : (int) round(($approved / max($commitments->count(), 1)) * 100);
 
         $submission = IpcrSubmission::query()
+            ->with('commitments')
             ->where('employee_id', $user->id)
             ->where('evaluation_year', $year)
             ->where('evaluation_quarter', $quarter)
             ->first();
+
+        $weightSummary = CommitmentWeightRules::summaryForEmployee($user->id, $year, $quarter);
+
+        $hasDraftOrReturned = $commitments->contains(fn ($c) => in_array($c->status, [CommitmentStatus::Draft, CommitmentStatus::Returned], true));
+        $submissionAllowsSubmit = ! $submission || $submission->status === SubmissionStatus::Returned;
+        $canSubmitPeriod = $hasDraftOrReturned
+            && $submissionAllowsSubmit
+            && $weightSummary['meets_submit_requirement']
+            && $user->supervisor_id !== null;
 
         return Inertia::render('Employee/Dashboard', [
             'stats' => [
@@ -67,6 +78,19 @@ class DashboardController extends Controller
                 'quarter' => $quarter,
             ],
             'submission' => $submission,
+            'weightSummary' => $weightSummary,
+            'canSubmitPeriod' => $canSubmitPeriod,
+            'submitBlockedReason' => ! $user->supervisor_id
+                ? 'You are not assigned to a supervisor yet. An administrator must link you before you can submit.'
+                : (! $weightSummary['meets_submit_requirement'] && $hasDraftOrReturned && $submissionAllowsSubmit
+                    ? sprintf(
+                        'SPMS requires exactly %.0f%% core and %.0f%% strategic across draft commitments (currently %.2f%% / %.2f%%).',
+                        CommitmentWeightRules::CORE_CAP,
+                        CommitmentWeightRules::STRATEGIC_CAP,
+                        $weightSummary['core'],
+                        $weightSummary['strategic'],
+                    )
+                    : null),
             'reminder' => 'The Q'.$quarter.' '.$year.' evaluation period closes on the last day of the quarter. Submit accomplishments and supporting documents before the deadline.',
         ]);
     }
@@ -79,9 +103,10 @@ class DashboardController extends Controller
             ->pluck('id');
 
         $submissions = IpcrSubmission::query()
-            ->with('employee')
+            ->with(['employee', 'commitments'])
             ->whereIn('employee_id', $teamIds)
             ->orderByDesc('submitted_at')
+            ->orderByDesc('id')
             ->take(50)
             ->get();
 

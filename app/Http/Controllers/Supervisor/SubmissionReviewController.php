@@ -28,6 +28,16 @@ class SubmissionReviewController extends Controller
             'supervisor_feedback' => ['nullable', 'string', 'max:5000'],
         ]);
 
+        if ($data['action'] === 'return') {
+            $feedback = trim((string) ($data['supervisor_feedback'] ?? ''));
+            if (strlen($feedback) < 20) {
+                return back()->withErrors([
+                    'supervisor_feedback' => 'Returning for revision requires clear guidance: please write at least 20 characters for the employee.',
+                ]);
+            }
+            $data['supervisor_feedback'] = $feedback;
+        }
+
         if ($data['action'] === 'approve') {
             $overall = SpmsRatingCalculator::overall(
                 (int) $data['quality'],
@@ -49,8 +59,12 @@ class SubmissionReviewController extends Controller
         } else {
             $submission->update([
                 'status' => SubmissionStatus::Returned,
-                'supervisor_feedback' => $data['supervisor_feedback'] ?? null,
+                'supervisor_feedback' => $data['supervisor_feedback'],
                 'reviewed_at' => now(),
+                'quality' => null,
+                'efficiency' => null,
+                'timeliness' => null,
+                'overall_rating' => null,
             ]);
 
             $submission->commitments()->update(['status' => CommitmentStatus::Returned]);

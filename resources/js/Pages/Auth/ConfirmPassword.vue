@@ -18,7 +18,7 @@ const submit = () => {
 </script>
 
 <template>
-    <GuestLayout>
+    <GuestLayout :back-href="route('dashboard')" back-label="Back to dashboard">
         <Head title="Confirm Password" />
 
         <div class="mb-4 text-sm text-gray-600">

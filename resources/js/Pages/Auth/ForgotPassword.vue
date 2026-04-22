@@ -22,7 +22,7 @@ const submit = () => {
 </script>
 
 <template>
-    <GuestLayout>
+    <GuestLayout :back-href="route('login')" back-label="Back to sign in">
         <Head title="Forgot Password" />
 
         <div class="mb-4 text-sm text-gray-600">

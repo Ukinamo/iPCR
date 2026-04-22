@@ -22,7 +22,7 @@ const verificationLinkSent = computed(
 </script>
 
 <template>
-    <GuestLayout>
+    <GuestLayout :back-href="route('home')" back-label="Back to home">
         <Head title="Email Verification" />
 
         <div class="mb-4 text-sm text-gray-600">

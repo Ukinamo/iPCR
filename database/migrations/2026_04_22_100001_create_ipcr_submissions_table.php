@@ -24,7 +24,8 @@ return new class extends Migration
             $table->timestamp('reviewed_at')->nullable();
             $table->timestamps();
 
-            $table->unique(['employee_id', 'evaluation_year', 'evaluation_quarter']);
+            // MySQL identifier limit is 64 chars; Laravel's auto-generated unique name exceeds it.
+            $table->unique(['employee_id', 'evaluation_year', 'evaluation_quarter'], 'ipcr_submissions_emp_period_uniq');
         });
     }
 
