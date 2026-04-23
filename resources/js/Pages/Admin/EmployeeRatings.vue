@@ -69,51 +69,79 @@ function submissionTotals(submission) {
                         <p v-if="s.overall_rating != null" class="text-lg font-bold text-amber-800">Overall: {{ s.overall_rating }}</p>
                     </div>
                     <div class="overflow-x-auto">
-                        <table class="min-w-full divide-y divide-slate-200 text-sm">
-                            <thead class="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        <table class="min-w-full border-collapse text-xs">
+                            <thead class="bg-slate-100 text-center font-semibold uppercase tracking-wide text-slate-600">
                                 <tr>
-                                    <th class="px-3 py-2">Commitment</th>
-                                    <th class="px-3 py-2">Type</th>
-                                    <th class="px-3 py-2">Wt%</th>
-                                    <th class="px-3 py-2">Prog%</th>
-                                    <th class="px-3 py-2">Q3 Tgt</th>
-                                    <th class="px-3 py-2">Q3 Act</th>
-                                    <th class="px-3 py-2">Q4 Tgt</th>
-                                    <th class="px-3 py-2">Q4 Act</th>
-                                    <th class="px-3 py-2">Actual</th>
-                                    <th class="px-3 py-2">Target</th>
-                                    <th class="px-3 py-2">% Accomp</th>
-                                    <th class="px-3 py-2">Q</th>
-                                    <th class="px-3 py-2">E</th>
-                                    <th class="px-3 py-2">T</th>
-                                    <th class="px-3 py-2">Avg</th>
-                                    <th class="px-3 py-2">Weighted</th>
+                                    <th class="border border-slate-300 px-2 py-1" rowspan="3">Function</th>
+                                    <th class="border border-slate-300 px-2 py-1" rowspan="3">Services / Programs / Indicators</th>
+                                    <th class="border border-slate-300 px-2 py-1" rowspan="3">Weight</th>
+                                    <th class="border border-slate-300 px-2 py-1" rowspan="3">Annual Office Target</th>
+                                    <th class="border border-slate-300 px-2 py-1" rowspan="3">Individual Annual Targets</th>
+                                    <th class="border border-slate-300 px-2 py-1" colspan="7">Accomplishments</th>
+                                    <th class="border border-slate-300 px-2 py-1" colspan="4">Rating</th>
+                                    <th class="border border-slate-300 px-2 py-1" rowspan="3">Remarks</th>
+                                </tr>
+                                <tr>
+                                    <th class="border border-slate-300 px-2 py-1" colspan="2">Q3</th>
+                                    <th class="border border-slate-300 px-2 py-1" colspan="2">Q4</th>
+                                    <th class="border border-slate-300 px-2 py-1" colspan="3">Total</th>
+                                    <th class="border border-slate-300 px-2 py-1" rowspan="2">Q</th>
+                                    <th class="border border-slate-300 px-2 py-1" rowspan="2">E</th>
+                                    <th class="border border-slate-300 px-2 py-1" rowspan="2">T</th>
+                                    <th class="border border-slate-300 px-2 py-1" rowspan="2">Avg</th>
+                                </tr>
+                                <tr>
+                                    <th class="border border-slate-300 px-2 py-1">Target</th>
+                                    <th class="border border-slate-300 px-2 py-1">Actual</th>
+                                    <th class="border border-slate-300 px-2 py-1">Target</th>
+                                    <th class="border border-slate-300 px-2 py-1">Actual</th>
+                                    <th class="border border-slate-300 px-2 py-1">Target</th>
+                                    <th class="border border-slate-300 px-2 py-1">Actual</th>
+                                    <th class="border border-slate-300 px-2 py-1">%</th>
                                 </tr>
                             </thead>
-                            <tbody class="divide-y divide-slate-100">
-                                <tr v-for="c in s.commitments || []" :key="c.id">
-                                    <td class="px-3 py-2 font-medium text-slate-900">{{ c.title }}</td>
-                                    <td class="px-3 py-2 capitalize text-slate-600">{{ c.function_type }}</td>
-                                    <td class="px-3 py-2">{{ Number(c.weight) }}</td>
-                                    <td class="px-3 py-2">{{ c.progress }}</td>
-                                    <td class="px-3 py-2 text-slate-700">{{ c.rating_q3_target ?? '—' }}</td>
-                                    <td class="px-3 py-2 text-slate-700">{{ c.rating_q3_actual ?? '—' }}</td>
-                                    <td class="px-3 py-2 text-slate-700">{{ c.rating_q4_target ?? '—' }}</td>
-                                    <td class="px-3 py-2 text-slate-700">{{ c.rating_q4_actual ?? '—' }}</td>
-                                    <td class="px-3 py-2 text-slate-700">{{ c.rating_actual_total ?? '—' }}</td>
-                                    <td class="px-3 py-2 text-slate-700">{{ c.rating_target_total ?? '—' }}</td>
-                                    <td class="px-3 py-2 text-slate-700">{{ c.rating_percent != null ? (Number(c.rating_percent) * 100).toFixed(0) + '%' : '—' }}</td>
-                                    <td class="px-3 py-2">{{ c.rating_quality ?? '—' }}</td>
-                                    <td class="px-3 py-2">{{ c.rating_efficiency ?? '—' }}</td>
-                                    <td class="px-3 py-2">{{ c.rating_timeliness ?? '—' }}</td>
-                                    <td class="px-3 py-2">{{ c.rating_average ?? '—' }}</td>
-                                    <td class="px-3 py-2">{{ c.rating_weighted ?? '—' }}</td>
+                            <tbody>
+                                <template v-for="group in ['core', 'strategic']" :key="group">
+                                    <tr v-if="(s.commitments || []).some(c => c.function_type === group)" class="bg-slate-100 font-semibold">
+                                        <td class="border border-slate-300 px-2 py-1 uppercase text-slate-700" colspan="17">
+                                            {{ group === 'core' ? 'Core Functions' : 'Strategic Functions' }}
+                                            ({{ (s.commitments || []).filter(c => c.function_type === group).reduce((a, c) => a + Number(c.weight || 0), 0) }}%)
+                                        </td>
+                                    </tr>
+                                    <tr v-for="c in (s.commitments || []).filter(c => c.function_type === group)" :key="c.id">
+                                        <td class="border border-slate-300 px-2 py-1 uppercase text-slate-700">{{ group }}</td>
+                                        <td class="border border-slate-300 px-2 py-1 text-slate-800">
+                                            <div class="font-medium">{{ c.title }}</div>
+                                            <div v-if="c.description" class="text-slate-500">{{ c.description }}</div>
+                                        </td>
+                                        <td class="border border-slate-300 px-2 py-1 text-center">{{ Number(c.weight) }}%</td>
+                                        <td class="border border-slate-300 px-2 py-1 text-center">{{ c.rating_target_total ?? '—' }}</td>
+                                        <td class="border border-slate-300 px-2 py-1 text-center">{{ c.rating_target_total ?? '—' }}</td>
+                                        <td class="border border-slate-300 px-2 py-1 text-center">{{ c.rating_q3_target ?? '—' }}</td>
+                                        <td class="border border-slate-300 px-2 py-1 text-center">{{ c.rating_q3_actual ?? '—' }}</td>
+                                        <td class="border border-slate-300 px-2 py-1 text-center">{{ c.rating_q4_target ?? '—' }}</td>
+                                        <td class="border border-slate-300 px-2 py-1 text-center">{{ c.rating_q4_actual ?? '—' }}</td>
+                                        <td class="border border-slate-300 px-2 py-1 text-center">{{ c.rating_target_total ?? '—' }}</td>
+                                        <td class="border border-slate-300 px-2 py-1 text-center">{{ c.rating_actual_total ?? '—' }}</td>
+                                        <td class="border border-slate-300 px-2 py-1 text-center">{{ c.rating_percent != null ? (Number(c.rating_percent) * 100).toFixed(0) + '%' : '—' }}</td>
+                                        <td class="border border-slate-300 px-2 py-1 text-center">{{ c.rating_quality ?? '—' }}</td>
+                                        <td class="border border-slate-300 px-2 py-1 text-center">{{ c.rating_efficiency ?? '—' }}</td>
+                                        <td class="border border-slate-300 px-2 py-1 text-center">{{ c.rating_timeliness ?? '—' }}</td>
+                                        <td class="border border-slate-300 px-2 py-1 text-center">{{ c.rating_average ?? '—' }}</td>
+                                        <td class="border border-slate-300 px-2 py-1 text-center">{{ c.rating_weighted ?? '—' }}</td>
+                                    </tr>
+                                </template>
+                                <tr class="bg-slate-100 font-semibold">
+                                    <td class="border border-slate-300 px-2 py-1 text-right" colspan="2">TOTAL</td>
+                                    <td class="border border-slate-300 px-2 py-1 text-center">{{ submissionTotals(s).weight }}%</td>
+                                    <td class="border border-slate-300 px-2 py-1" colspan="13"></td>
+                                    <td class="border border-slate-300 px-2 py-1 text-center">{{ submissionTotals(s).weighted }}</td>
                                 </tr>
-                                <tr class="bg-slate-50 font-semibold text-slate-800">
-                                    <td class="px-3 py-2" colspan="2">TOTAL</td>
-                                    <td class="px-3 py-2">{{ submissionTotals(s).weight }}</td>
-                                    <td class="px-3 py-2" colspan="8"></td>
-                                    <td class="px-3 py-2">{{ submissionTotals(s).weighted }}</td>
+                                <tr class="bg-amber-50 font-semibold text-amber-900">
+                                    <td class="border border-slate-300 px-2 py-1 text-right" colspan="2">FINAL AVERAGE RATING</td>
+                                    <td class="border border-slate-300 px-2 py-1" colspan="15">
+                                        {{ s.overall_rating != null ? Number(s.overall_rating).toFixed(2) : '—' }}
+                                    </td>
                                 </tr>
                             </tbody>
                         </table>
