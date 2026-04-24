@@ -13,6 +13,8 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
+use Inertia\Inertia;
+use Inertia\Response;
 
 class CommitmentController extends Controller
 {
@@ -26,8 +28,9 @@ class CommitmentController extends Controller
             'title' => ['required', 'string', 'max:255'],
             'description' => ['nullable', 'string', 'max:8000'],
             'function_type' => ['required', 'in:core,strategic'],
-            'weight' => ['required', 'numeric', 'min:0.01', 'max:100'],
-            'progress' => ['required', 'integer', 'min:0', 'max:100'],
+            'weight' => ['required', 'numeric', 'min:0', 'max:100'],
+            'annual_office_target' => ['nullable', 'string', 'max:255'],
+            'individual_annual_targets' => ['nullable', 'string', 'max:255'],
             'evaluation_year' => ['required', 'integer', 'min:2000', 'max:2100'],
             'evaluation_quarter' => ['required', 'integer', 'min:1', 'max:4'],
             'period_label' => ['required', 'string', 'max:32'],
@@ -53,7 +56,9 @@ class CommitmentController extends Controller
                 'description' => $data['description'] ?? null,
                 'function_type' => $data['function_type'],
                 'weight' => $data['weight'],
-                'progress' => $data['progress'],
+                'annual_office_target' => $data['annual_office_target'] ?? null,
+                'individual_annual_targets' => $data['individual_annual_targets'] ?? null,
+                'progress' => 0,
                 'evaluation_year' => $data['evaluation_year'],
                 'evaluation_quarter' => $data['evaluation_quarter'],
                 'period_label' => $data['period_label'],
@@ -109,11 +114,14 @@ class CommitmentController extends Controller
             'entries.*.function_type' => ['required', 'in:core,strategic'],
             'entries.*.title' => ['required', 'string', 'max:255'],
             'entries.*.description' => ['nullable', 'string', 'max:8000'],
-            'entries.*.weight' => ['required', 'numeric', 'min:0.01', 'max:100'],
-            'entries.*.progress' => ['required', 'integer', 'min:0', 'max:100'],
+            'entries.*.weight' => ['required', 'numeric', 'min:0', 'max:100'],
+            'entries.*.annual_office_target' => ['nullable', 'string', 'max:255'],
+            'entries.*.individual_annual_targets' => ['nullable', 'string', 'max:255'],
             'entries.*.evidence_title' => ['nullable', 'string', 'max:255'],
             'entries.*.evidence_description' => ['nullable', 'string', 'max:8000'],
             'entries.*.evidence_file' => ['nullable', 'file', 'max:12288', 'mimes:jpg,jpeg,png,gif,webp,pdf,doc,docx,xls,xlsx,txt,zip'],
+            'entries.*.evidence_files' => ['nullable', 'array', 'max:20'],
+            'entries.*.evidence_files.*' => ['file', 'max:12288', 'mimes:jpg,jpeg,png,gif,webp,pdf,doc,docx,xls,xlsx,txt,zip'],
         ]);
 
         $user = $request->user();
@@ -147,7 +155,9 @@ class CommitmentController extends Controller
                     'description' => $entry['description'] ?? null,
                     'function_type' => $entry['function_type'],
                     'weight' => $entry['weight'],
-                    'progress' => $entry['progress'],
+                    'annual_office_target' => $entry['annual_office_target'] ?? null,
+                    'individual_annual_targets' => $entry['individual_annual_targets'] ?? null,
+                    'progress' => 0,
                     'evaluation_year' => $data['evaluation_year'],
                     'evaluation_quarter' => $data['evaluation_quarter'],
                     'period_label' => $data['period_label'],
@@ -156,48 +166,95 @@ class CommitmentController extends Controller
 
                 AuditLogger::log($user->id, 'commitment.created', $commitment, null, $request);
 
-                $file = data_get($request->file('entries'), $index.'.evidence_file');
-                $wantsEvidence = $file !== null
-                    || filled($entry['evidence_title'] ?? null)
-                    || filled($entry['evidence_description'] ?? null);
+                $files = data_get($request->file('entries'), $index.'.evidence_files', []);
+                if (! is_array($files)) {
+                    $files = [$files];
+                }
+                $files = array_values(array_filter($files));
+
+                $singleFile = data_get($request->file('entries'), $index.'.evidence_file');
+                if ($singleFile !== null) {
+                    $files[] = $singleFile;
+                }
+
+                $sharedTitle = trim((string) ($entry['evidence_title'] ?? ''));
+                $sharedDescription = $entry['evidence_description'] ?? null;
+
+                $wantsEvidence = ! empty($files)
+                    || $sharedTitle !== ''
+                    || filled($sharedDescription);
 
                 if (! $wantsEvidence) {
                     continue;
                 }
 
-                $path = null;
-                $original = null;
-                $mime = null;
-                $size = null;
+                if ($sharedTitle === '') {
+                    $sharedTitle = $entry['title'];
+                }
 
-                if ($file !== null) {
+                if (empty($files)) {
+                    $accomplishment = Accomplishment::create([
+                        'user_id' => $user->id,
+                        'commitment_id' => $commitment->id,
+                        'title' => $sharedTitle,
+                        'description' => $sharedDescription,
+                    ]);
+                    AuditLogger::log($user->id, 'accomplishment.created', $accomplishment, null, $request);
+                    continue;
+                }
+
+                foreach ($files as $file) {
                     $path = $file->store('commitment-evidence/'.$user->id, 'public');
-                    $original = $file->getClientOriginalName();
-                    $mime = $file->getClientMimeType() ?: $file->getMimeType();
-                    $size = $file->getSize();
+
+                    $accomplishment = Accomplishment::create([
+                        'user_id' => $user->id,
+                        'commitment_id' => $commitment->id,
+                        'title' => $sharedTitle,
+                        'description' => $sharedDescription,
+                        'file_path' => $path,
+                        'original_filename' => $file->getClientOriginalName(),
+                        'mime_type' => $file->getClientMimeType() ?: $file->getMimeType(),
+                        'file_size' => $file->getSize(),
+                    ]);
+
+                    AuditLogger::log($user->id, 'accomplishment.created', $accomplishment, null, $request);
                 }
-
-                $evidenceTitle = trim((string) ($entry['evidence_title'] ?? ''));
-                if ($evidenceTitle === '') {
-                    $evidenceTitle = $entry['title'];
-                }
-
-                $accomplishment = Accomplishment::create([
-                    'user_id' => $user->id,
-                    'commitment_id' => $commitment->id,
-                    'title' => $evidenceTitle,
-                    'description' => $entry['evidence_description'] ?? null,
-                    'file_path' => $path,
-                    'original_filename' => $original,
-                    'mime_type' => $mime,
-                    'file_size' => $size,
-                ]);
-
-                AuditLogger::log($user->id, 'accomplishment.created', $accomplishment, null, $request);
             }
         });
 
         return back()->with('status', 'Commitments saved.');
+    }
+
+    public function show(Request $request, Commitment $commitment): Response
+    {
+        $this->authorizeCommitment($request, $commitment);
+
+        $siblings = Commitment::query()
+            ->where('user_id', $commitment->user_id)
+            ->where('evaluation_year', $commitment->evaluation_year)
+            ->where('evaluation_quarter', $commitment->evaluation_quarter)
+            ->where('function_type', $commitment->function_type)
+            ->where('title', $commitment->title)
+            ->with(['accomplishments' => fn ($q) => $q->orderByDesc('created_at')])
+            ->orderBy('id')
+            ->get();
+
+        $totalWeight = (float) $siblings->sum('weight');
+        $totalEvidence = (int) $siblings->sum(fn ($c) => $c->accomplishments->count());
+
+        return Inertia::render('Employee/CommitmentShow', [
+            'group' => [
+                'function_type' => $commitment->function_type,
+                'title' => $commitment->title,
+                'period_label' => $commitment->period_label,
+                'evaluation_year' => $commitment->evaluation_year,
+                'evaluation_quarter' => $commitment->evaluation_quarter,
+                'total_weight' => round($totalWeight, 2),
+                'total_indicators' => $siblings->count(),
+                'total_evidence' => $totalEvidence,
+            ],
+            'commitments' => $siblings,
+        ]);
     }
 
     public function update(Request $request, Commitment $commitment): RedirectResponse
@@ -212,8 +269,9 @@ class CommitmentController extends Controller
             'title' => ['required', 'string', 'max:255'],
             'description' => ['nullable', 'string', 'max:8000'],
             'function_type' => ['required', 'in:core,strategic'],
-            'weight' => ['required', 'numeric', 'min:0.01', 'max:100'],
-            'progress' => ['required', 'integer', 'min:0', 'max:100'],
+            'weight' => ['required', 'numeric', 'min:0', 'max:100'],
+            'annual_office_target' => ['nullable', 'string', 'max:255'],
+            'individual_annual_targets' => ['nullable', 'string', 'max:255'],
             'period_label' => ['required', 'string', 'max:32'],
         ]);
 

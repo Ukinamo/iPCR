@@ -21,9 +21,11 @@ class AccomplishmentController extends Controller
         ]);
 
         $data = $request->validate([
-            'title' => ['required', 'string', 'max:255'],
+            'title' => ['nullable', 'string', 'max:255'],
             'description' => ['nullable', 'string', 'max:8000'],
             'commitment_id' => ['required', 'exists:commitments,id'],
+            'files' => ['nullable', 'array', 'max:20'],
+            'files.*' => ['file', 'max:12288', 'mimes:jpg,jpeg,png,gif,webp,pdf,doc,docx,xls,xlsx,txt,zip'],
             'file' => ['nullable', 'file', 'max:12288', 'mimes:jpg,jpeg,png,gif,webp,pdf,doc,docx,xls,xlsx,txt,zip'],
         ]);
 
@@ -39,33 +41,67 @@ class AccomplishmentController extends Controller
             ]);
         }
 
-        $path = null;
-        $original = null;
-        $mime = null;
-        $size = null;
-
+        /** @var list<\Illuminate\Http\UploadedFile> $files */
+        $files = $request->file('files') ?? [];
+        if (! is_array($files)) {
+            $files = [$files];
+        }
         if ($request->hasFile('file')) {
-            $file = $request->file('file');
+            $files[] = $request->file('file');
+        }
+
+        $sharedTitle = trim((string) ($data['title'] ?? ''));
+        $sharedDescription = $data['description'] ?? null;
+
+        if (empty($files) && $sharedTitle === '' && $sharedDescription === null) {
+            throw ValidationException::withMessages([
+                'files' => 'Attach at least one file, or provide a subject.',
+            ]);
+        }
+
+        if (empty($files)) {
+            if ($sharedTitle === '') {
+                throw ValidationException::withMessages([
+                    'title' => 'Please provide a subject when saving without a file.',
+                ]);
+            }
+
+            $accomplishment = Accomplishment::create([
+                'user_id' => $user->id,
+                'commitment_id' => $data['commitment_id'],
+                'title' => $sharedTitle,
+                'description' => $sharedDescription,
+            ]);
+            AuditLogger::log($user->id, 'accomplishment.created', $accomplishment, null, $request);
+
+            return back()->with('status', 'Evidence saved.');
+        }
+
+        foreach ($files as $file) {
             $path = $file->store('commitment-evidence/'.$user->id, 'public');
             $original = $file->getClientOriginalName();
             $mime = $file->getClientMimeType() ?: $file->getMimeType();
             $size = $file->getSize();
+
+            $title = $sharedTitle !== '' ? $sharedTitle : $original;
+
+            $accomplishment = Accomplishment::create([
+                'user_id' => $user->id,
+                'commitment_id' => $data['commitment_id'],
+                'title' => $title,
+                'description' => $sharedDescription,
+                'file_path' => $path,
+                'original_filename' => $original,
+                'mime_type' => $mime,
+                'file_size' => $size,
+            ]);
+
+            AuditLogger::log($user->id, 'accomplishment.created', $accomplishment, null, $request);
         }
 
-        $accomplishment = Accomplishment::create([
-            'user_id' => $user->id,
-            'commitment_id' => $data['commitment_id'],
-            'title' => $data['title'],
-            'description' => $data['description'] ?? null,
-            'file_path' => $path,
-            'original_filename' => $original,
-            'mime_type' => $mime,
-            'file_size' => $size,
-        ]);
+        $count = count($files);
 
-        AuditLogger::log($user->id, 'accomplishment.created', $accomplishment, null, $request);
-
-        return back()->with('status', 'Evidence saved.');
+        return back()->with('status', $count === 1 ? 'Evidence saved.' : "Saved {$count} evidence files.");
     }
 
     public function destroy(Request $request, Accomplishment $accomplishment): RedirectResponse

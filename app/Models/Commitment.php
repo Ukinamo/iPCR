@@ -19,6 +19,8 @@ class Commitment extends Model
         'description',
         'function_type',
         'weight',
+        'annual_office_target',
+        'individual_annual_targets',
         'progress',
         'rating_actual_total',
         'rating_target_total',
@@ -32,6 +34,7 @@ class Commitment extends Model
         'rating_timeliness',
         'rating_average',
         'rating_weighted',
+        'remarks',
         'status',
     ];
 

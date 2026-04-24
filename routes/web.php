@@ -22,6 +22,7 @@ Route::middleware(['auth', 'verified', 'active'])->group(function () {
 
     Route::middleware('role:employee')->prefix('employee')->name('employee.')->group(function () {
         Route::post('commitments', [CommitmentController::class, 'store'])->name('commitments.store');
+        Route::get('commitments/{commitment}', [CommitmentController::class, 'show'])->name('commitments.show');
         Route::patch('commitments/{commitment}', [CommitmentController::class, 'update'])->name('commitments.update');
         Route::delete('commitments/{commitment}', [CommitmentController::class, 'destroy'])->name('commitments.destroy');
         Route::post('accomplishments', [AccomplishmentController::class, 'store'])->name('accomplishments.store');

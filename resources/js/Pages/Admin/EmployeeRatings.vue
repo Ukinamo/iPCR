@@ -21,6 +21,13 @@ function submissionTotals(submission) {
         weighted: weighted.toFixed(2),
     };
 }
+
+function indicatorLines(c) {
+    const desc = (c?.description ?? '').trim();
+    if (!desc) return [c?.title ?? ''];
+    const lines = desc.split(/\r\n|\r|\n/).map(l => l.trim()).filter(Boolean);
+    return lines.length ? lines : [c?.title ?? ''];
+}
 </script>
 
 <template>
@@ -108,29 +115,35 @@ function submissionTotals(submission) {
                                             ({{ (s.commitments || []).filter(c => c.function_type === group).reduce((a, c) => a + Number(c.weight || 0), 0) }}%)
                                         </td>
                                     </tr>
-                                    <tr v-for="c in (s.commitments || []).filter(c => c.function_type === group)" :key="c.id" class="align-top">
-                                        <td class="border border-slate-300 px-2 py-1 font-semibold text-slate-800">
-                                            {{ c.title }}
-                                        </td>
-                                        <td class="border border-slate-300 px-2 py-1 text-slate-700 whitespace-pre-line">
-                                            {{ c.description || '—' }}
-                                        </td>
-                                        <td class="border border-slate-300 px-2 py-1 text-center">{{ Number(c.weight) }}%</td>
-                                        <td class="border border-slate-300 px-2 py-1 text-center">{{ c.rating_target_total ?? '—' }}</td>
-                                        <td class="border border-slate-300 px-2 py-1 text-center">{{ c.rating_target_total ?? '—' }}</td>
-                                        <td class="border border-slate-300 px-2 py-1 text-center">{{ c.rating_q3_target ?? '—' }}</td>
-                                        <td class="border border-slate-300 px-2 py-1 text-center">{{ c.rating_q3_actual ?? '—' }}</td>
-                                        <td class="border border-slate-300 px-2 py-1 text-center">{{ c.rating_q4_target ?? '—' }}</td>
-                                        <td class="border border-slate-300 px-2 py-1 text-center">{{ c.rating_q4_actual ?? '—' }}</td>
-                                        <td class="border border-slate-300 px-2 py-1 text-center">{{ c.rating_target_total ?? '—' }}</td>
-                                        <td class="border border-slate-300 px-2 py-1 text-center">{{ c.rating_actual_total ?? '—' }}</td>
-                                        <td class="border border-slate-300 px-2 py-1 text-center">{{ c.rating_percent != null ? (Number(c.rating_percent) * 100).toFixed(0) + '%' : '—' }}</td>
-                                        <td class="border border-slate-300 px-2 py-1 text-center">{{ c.rating_quality ?? '—' }}</td>
-                                        <td class="border border-slate-300 px-2 py-1 text-center">{{ c.rating_efficiency ?? '—' }}</td>
-                                        <td class="border border-slate-300 px-2 py-1 text-center">{{ c.rating_timeliness ?? '—' }}</td>
-                                        <td class="border border-slate-300 px-2 py-1 text-center">{{ c.rating_average ?? '—' }}</td>
-                                        <td class="border border-slate-300 px-2 py-1 text-center">{{ c.rating_weighted ?? '—' }}</td>
-                                    </tr>
+                                    <template v-for="c in (s.commitments || []).filter(c => c.function_type === group)" :key="c.id">
+                                        <tr
+                                            v-for="(line, li) in indicatorLines(c)"
+                                            :key="c.id + '-' + li"
+                                            class="align-top"
+                                        >
+                                            <td v-if="li === 0" :rowspan="indicatorLines(c).length" class="border border-slate-300 px-2 py-1 font-semibold text-slate-800">
+                                                {{ c.title }}
+                                            </td>
+                                            <td class="border border-slate-300 px-2 py-1 text-slate-700">
+                                                {{ line }}
+                                            </td>
+                                            <td v-if="li === 0" :rowspan="indicatorLines(c).length" class="border border-slate-300 px-2 py-1 text-center">{{ Number(c.weight) }}%</td>
+                                            <td v-if="li === 0" :rowspan="indicatorLines(c).length" class="border border-slate-300 px-2 py-1 text-center">{{ c.annual_office_target ?? '—' }}</td>
+                                            <td v-if="li === 0" :rowspan="indicatorLines(c).length" class="border border-slate-300 px-2 py-1 text-center">{{ c.individual_annual_targets ?? '—' }}</td>
+                                            <td v-if="li === 0" :rowspan="indicatorLines(c).length" class="border border-slate-300 px-2 py-1 text-center">{{ c.rating_q3_target ?? '—' }}</td>
+                                            <td v-if="li === 0" :rowspan="indicatorLines(c).length" class="border border-slate-300 px-2 py-1 text-center">{{ c.rating_q3_actual ?? '—' }}</td>
+                                            <td v-if="li === 0" :rowspan="indicatorLines(c).length" class="border border-slate-300 px-2 py-1 text-center">{{ c.rating_q4_target ?? '—' }}</td>
+                                            <td v-if="li === 0" :rowspan="indicatorLines(c).length" class="border border-slate-300 px-2 py-1 text-center">{{ c.rating_q4_actual ?? '—' }}</td>
+                                            <td v-if="li === 0" :rowspan="indicatorLines(c).length" class="border border-slate-300 px-2 py-1 text-center">{{ c.rating_target_total ?? '—' }}</td>
+                                            <td v-if="li === 0" :rowspan="indicatorLines(c).length" class="border border-slate-300 px-2 py-1 text-center">{{ c.rating_actual_total ?? '—' }}</td>
+                                            <td v-if="li === 0" :rowspan="indicatorLines(c).length" class="border border-slate-300 px-2 py-1 text-center">{{ c.rating_percent != null ? (Number(c.rating_percent) * 100).toFixed(0) + '%' : '—' }}</td>
+                                            <td v-if="li === 0" :rowspan="indicatorLines(c).length" class="border border-slate-300 px-2 py-1 text-center">{{ c.rating_quality ?? '—' }}</td>
+                                            <td v-if="li === 0" :rowspan="indicatorLines(c).length" class="border border-slate-300 px-2 py-1 text-center">{{ c.rating_efficiency ?? '—' }}</td>
+                                            <td v-if="li === 0" :rowspan="indicatorLines(c).length" class="border border-slate-300 px-2 py-1 text-center">{{ c.rating_timeliness ?? '—' }}</td>
+                                            <td v-if="li === 0" :rowspan="indicatorLines(c).length" class="border border-slate-300 px-2 py-1 text-center">{{ c.rating_average ?? '—' }}</td>
+                                            <td v-if="li === 0" :rowspan="indicatorLines(c).length" class="border border-slate-300 px-2 py-1 text-center">{{ c.remarks ?? (c.rating_weighted ?? '—') }}</td>
+                                        </tr>
+                                    </template>
                                 </template>
                                 <tr class="bg-slate-100 font-semibold">
                                     <td class="border border-slate-300 px-2 py-1 text-right" colspan="2">TOTAL</td>

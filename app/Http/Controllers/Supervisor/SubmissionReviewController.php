@@ -35,6 +35,7 @@ class SubmissionReviewController extends Controller
                 'commitments.*.rating_q3_actual' => ['required', 'numeric', 'min:0'],
                 'commitments.*.rating_q4_target' => ['required', 'numeric', 'min:0'],
                 'commitments.*.rating_q4_actual' => ['required', 'numeric', 'min:0'],
+                'commitments.*.remarks' => ['nullable', 'string', 'max:255'],
             ]));
         } else {
             $data = $base;
@@ -118,6 +119,7 @@ class SubmissionReviewController extends Controller
                     'rating_timeliness' => $timeliness,
                     'rating_average' => $scored['average'],
                     'rating_weighted' => $scored['weighted'],
+                    'remarks' => $row['remarks'] ?? null,
                 ]);
 
                 $sumWeighted += $scored['weighted'];
@@ -159,6 +161,7 @@ class SubmissionReviewController extends Controller
                 'rating_timeliness' => null,
                 'rating_average' => null,
                 'rating_weighted' => null,
+                'remarks' => null,
             ]);
         }
 
