@@ -448,17 +448,17 @@ final class IpcrApprovedFormExporter
     {
         $L = self::L();
 
-        // Function cell (we don't have a separate grouping field — leave the header's
-        // function_type implicit via the CORE/STRATEGIC banner; put the title first line here).
-        $sheet->setCellValue(self::cell(1, $row), '');
+        // Column A (Function): the commitment title acts as the grouping/function name
+        $sheet->setCellValue(self::cell(1, $row), (string) $c->title);
+        $sheet->getStyle(self::cell(1, $row))->getFont()->setBold(true);
+        $sheet->getStyle(self::cell(1, $row))->getAlignment()
+            ->setHorizontal(Alignment::HORIZONTAL_LEFT)
+            ->setVertical(Alignment::VERTICAL_CENTER)
+            ->setWrapText(true);
 
-        // B..C merged: title + description
+        // B..C merged: services / programs / indicators (description with wrap)
         $sheet->mergeCells(self::cell(2, $row).':'.self::cell(3, $row));
-        $indicator = (string) $c->title;
-        if (filled($c->description)) {
-            $indicator .= "\n".$c->description;
-        }
-        $sheet->setCellValue(self::cell(2, $row), $indicator);
+        $sheet->setCellValue(self::cell(2, $row), (string) ($c->description ?? ''));
         $sheet->getStyle(self::cell(2, $row))->getAlignment()
             ->setHorizontal(Alignment::HORIZONTAL_LEFT)
             ->setVertical(Alignment::VERTICAL_TOP)

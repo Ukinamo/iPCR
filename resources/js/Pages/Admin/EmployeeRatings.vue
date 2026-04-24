@@ -108,11 +108,12 @@ function submissionTotals(submission) {
                                             ({{ (s.commitments || []).filter(c => c.function_type === group).reduce((a, c) => a + Number(c.weight || 0), 0) }}%)
                                         </td>
                                     </tr>
-                                    <tr v-for="c in (s.commitments || []).filter(c => c.function_type === group)" :key="c.id">
-                                        <td class="border border-slate-300 px-2 py-1 uppercase text-slate-700">{{ group }}</td>
-                                        <td class="border border-slate-300 px-2 py-1 text-slate-800">
-                                            <div class="font-medium">{{ c.title }}</div>
-                                            <div v-if="c.description" class="text-slate-500">{{ c.description }}</div>
+                                    <tr v-for="c in (s.commitments || []).filter(c => c.function_type === group)" :key="c.id" class="align-top">
+                                        <td class="border border-slate-300 px-2 py-1 font-semibold text-slate-800">
+                                            {{ c.title }}
+                                        </td>
+                                        <td class="border border-slate-300 px-2 py-1 text-slate-700 whitespace-pre-line">
+                                            {{ c.description || '—' }}
                                         </td>
                                         <td class="border border-slate-300 px-2 py-1 text-center">{{ Number(c.weight) }}%</td>
                                         <td class="border border-slate-300 px-2 py-1 text-center">{{ c.rating_target_total ?? '—' }}</td>
