@@ -11,6 +11,7 @@ class Commitment extends Model
 {
     protected $fillable = [
         'user_id',
+        'batch_id',
         'ipcr_submission_id',
         'evaluation_year',
         'evaluation_quarter',

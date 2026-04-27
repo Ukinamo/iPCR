@@ -12,6 +12,7 @@ use App\Services\CommitmentWeightRules;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -49,9 +50,12 @@ class CommitmentController extends Controller
             || filled($data['evidence_title'] ?? null)
             || filled($data['evidence_description'] ?? null);
 
-        DB::transaction(function () use ($request, $user, $data, $wantsEvidence) {
+        $batchId = (string) Str::uuid();
+
+        DB::transaction(function () use ($request, $user, $data, $wantsEvidence, $batchId) {
             $commitment = Commitment::create([
                 'user_id' => $user->id,
+                'batch_id' => $batchId,
                 'title' => $data['title'],
                 'description' => $data['description'] ?? null,
                 'function_type' => $data['function_type'],
@@ -147,10 +151,13 @@ class CommitmentController extends Controller
             }
         }
 
-        DB::transaction(function () use ($request, $user, $data) {
+        $batchId = (string) Str::uuid();
+
+        DB::transaction(function () use ($request, $user, $data, $batchId) {
             foreach ($data['entries'] as $index => $entry) {
                 $commitment = Commitment::create([
                     'user_id' => $user->id,
+                    'batch_id' => $batchId,
                     'title' => $entry['title'],
                     'description' => $entry['description'] ?? null,
                     'function_type' => $entry['function_type'],
@@ -229,29 +236,43 @@ class CommitmentController extends Controller
     {
         $this->authorizeCommitment($request, $commitment);
 
-        $siblings = Commitment::query()
+        $query = Commitment::query()
             ->where('user_id', $commitment->user_id)
-            ->where('evaluation_year', $commitment->evaluation_year)
-            ->where('evaluation_quarter', $commitment->evaluation_quarter)
-            ->where('function_type', $commitment->function_type)
-            ->where('title', $commitment->title)
-            ->with(['accomplishments' => fn ($q) => $q->orderByDesc('created_at')])
-            ->orderBy('id')
-            ->get();
+            ->with(['accomplishments' => fn ($q) => $q->orderByDesc('created_at')]);
+
+        if (! empty($commitment->batch_id)) {
+            $query->where('batch_id', $commitment->batch_id);
+        } else {
+            $query
+                ->whereNull('batch_id')
+                ->where('evaluation_year', $commitment->evaluation_year)
+                ->where('evaluation_quarter', $commitment->evaluation_quarter)
+                ->where('function_type', $commitment->function_type)
+                ->where('title', $commitment->title);
+        }
+
+        $siblings = $query->orderBy('function_type')->orderBy('id')->get();
 
         $totalWeight = (float) $siblings->sum('weight');
         $totalEvidence = (int) $siblings->sum(fn ($c) => $c->accomplishments->count());
 
+        $functionTitles = $siblings
+            ->map(fn ($c) => ['function_type' => $c->function_type, 'title' => $c->title])
+            ->unique(fn ($r) => $r['function_type'].'|'.$r['title'])
+            ->values();
+
         return Inertia::render('Employee/CommitmentShow', [
             'group' => [
-                'function_type' => $commitment->function_type,
-                'title' => $commitment->title,
+                'batch_id' => $commitment->batch_id,
                 'period_label' => $commitment->period_label,
                 'evaluation_year' => $commitment->evaluation_year,
                 'evaluation_quarter' => $commitment->evaluation_quarter,
                 'total_weight' => round($totalWeight, 2),
                 'total_indicators' => $siblings->count(),
                 'total_evidence' => $totalEvidence,
+                'total_functions' => $functionTitles->count(),
+                'functions' => $functionTitles,
+                'created_at' => optional($siblings->first()?->created_at)->toIso8601String(),
             ],
             'commitments' => $siblings,
         ]);

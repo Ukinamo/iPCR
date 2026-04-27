@@ -128,17 +128,19 @@ const commitmentErrorList = computed(() => {
 
 const groupedCommitments = computed(() => {
     const groups = new Map();
+    const statusRank = { draft: 0, returned: 1, in_review: 2, approved: 3 };
+
     for (const c of props.commitments || []) {
-        const key = `${c.period_label}|${c.function_type}|${c.title}`;
+        const key = c.batch_id || `solo-${c.id}`;
         if (!groups.has(key)) {
             groups.set(key, {
                 key,
                 first_id: c.id,
+                batch_id: c.batch_id,
                 period_label: c.period_label,
-                function_type: c.function_type,
-                title: c.title,
                 status: c.status,
                 items: [],
+                functionMap: new Map(),
                 total_weight: 0,
                 total_evidence: 0,
                 created_at: c.created_at,
@@ -148,13 +150,36 @@ const groupedCommitments = computed(() => {
         g.items.push(c);
         g.total_weight += Number(c.weight || 0);
         g.total_evidence += (c.accomplishments?.length || 0);
-        const statusRank = { draft: 0, returned: 1, in_review: 2, approved: 3 };
         if ((statusRank[c.status] ?? -1) < (statusRank[g.status] ?? -1)) {
             g.status = c.status;
         }
+        const fnKey = `${c.function_type}|${c.title}`;
+        if (!g.functionMap.has(fnKey)) {
+            g.functionMap.set(fnKey, { function_type: c.function_type, title: c.title, count: 0 });
+        }
+        g.functionMap.get(fnKey).count += 1;
     }
-    return Array.from(groups.values());
+
+    return Array.from(groups.values()).map((g) => ({
+        ...g,
+        functions: Array.from(g.functionMap.values()),
+    }));
 });
+
+function formatBatchDate(iso) {
+    if (!iso) return '';
+    try {
+        return new Date(iso).toLocaleString(undefined, {
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric',
+            hour: 'numeric',
+            minute: '2-digit',
+        });
+    } catch {
+        return '';
+    }
+}
 
 const coreEntries = computed(() =>
     commitmentForm.entries
@@ -1002,33 +1027,45 @@ function indicatorLines(c) {
                     <div
                         v-for="g in groupedCommitments"
                         :key="g.key"
-                        class="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-5 shadow-sm sm:flex-row sm:items-start sm:justify-between"
+                        class="flex flex-col gap-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm sm:flex-row sm:items-start sm:justify-between"
                     >
                         <div class="min-w-0 flex-1">
                             <div class="flex flex-wrap items-center gap-2">
-                                <span
-                                    class="rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide"
-                                    :class="g.function_type === 'core'
-                                        ? 'bg-blue-100 text-blue-800'
-                                        : 'bg-amber-100 text-amber-800'"
-                                >
-                                    {{ g.function_type }}
-                                </span>
-                                <h4 class="truncate text-base font-semibold text-slate-900">{{ g.title || '(untitled function)' }}</h4>
+                                <h4 class="text-base font-semibold text-slate-900">
+                                    Commitment package
+                                    <span v-if="g.created_at" class="ml-1 text-xs font-normal text-slate-500">
+                                        · saved {{ formatBatchDate(g.created_at) }}
+                                    </span>
+                                </h4>
                                 <span class="rounded-full px-2 py-0.5 text-xs font-semibold ring-1" :class="statusBadge(g.status)">
                                     {{ g.status.replace('_', ' ') }}
                                 </span>
                             </div>
                             <p class="mt-1 text-sm text-slate-500">
                                 {{ g.period_label }}
+                                · {{ g.functions.length }} function{{ g.functions.length === 1 ? '' : 's' }}
                                 · {{ g.items.length }} indicator{{ g.items.length === 1 ? '' : 's' }}
                                 · Σ Weight <strong>{{ g.total_weight.toFixed(2) }}%</strong>
+                                · {{ g.total_evidence }} evidence file{{ g.total_evidence === 1 ? '' : 's' }}
                             </p>
-                            <p class="mt-0.5 text-xs text-slate-500">
-                                Evidence attached:
-                                <strong>{{ g.total_evidence }}</strong>
-                                file{{ g.total_evidence === 1 ? '' : 's' }}
-                            </p>
+                            <ul class="mt-3 space-y-1">
+                                <li
+                                    v-for="(fn, i) in g.functions"
+                                    :key="i"
+                                    class="flex flex-wrap items-center gap-2 text-xs text-slate-700"
+                                >
+                                    <span
+                                        class="rounded-full px-2 py-0.5 text-[10px] font-bold uppercase"
+                                        :class="fn.function_type === 'core'
+                                            ? 'bg-blue-100 text-blue-800'
+                                            : 'bg-amber-100 text-amber-800'"
+                                    >
+                                        {{ fn.function_type }}
+                                    </span>
+                                    <span class="truncate">{{ fn.title || '(untitled)' }}</span>
+                                    <span class="text-slate-400">· {{ fn.count }} indicator{{ fn.count === 1 ? '' : 's' }}</span>
+                                </li>
+                            </ul>
                         </div>
                         <div class="flex shrink-0 items-center gap-2">
                             <PrimaryButton

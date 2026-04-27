@@ -6,11 +6,36 @@ import PrimaryButton from '@/Components/PrimaryButton.vue';
 import SecondaryButton from '@/Components/SecondaryButton.vue';
 import TextInput from '@/Components/TextInput.vue';
 import { Head, Link, router, useForm } from '@inertiajs/vue3';
-import { reactive, ref } from 'vue';
+import { computed, reactive, ref } from 'vue';
 
 const props = defineProps({
     group: Object,
     commitments: Array,
+});
+
+const functionBlocks = computed(() => {
+    const order = { core: 0, strategic: 1 };
+    const map = new Map();
+    for (const c of props.commitments || []) {
+        const key = `${c.function_type}|${c.title}`;
+        if (!map.has(key)) {
+            map.set(key, {
+                function_type: c.function_type,
+                title: c.title,
+                items: [],
+                weight_total: 0,
+            });
+        }
+        const block = map.get(key);
+        block.items.push(c);
+        block.weight_total += Number(c.weight || 0);
+    }
+    return Array.from(map.values()).sort((a, b) => {
+        const ta = order[a.function_type] ?? 9;
+        const tb = order[b.function_type] ?? 9;
+        if (ta !== tb) return ta - tb;
+        return (a.title || '').localeCompare(b.title || '');
+    });
 });
 
 function canManage(status) {
@@ -159,69 +184,92 @@ function submitEvidence(commitmentId) {
                 <div class="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
                     <div class="flex flex-wrap items-start justify-between gap-3">
                         <div class="min-w-0 flex-1">
-                            <div class="flex flex-wrap items-center gap-2">
-                                <span
-                                    class="rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide"
-                                    :class="group.function_type === 'core'
-                                        ? 'bg-blue-100 text-blue-800'
-                                        : 'bg-amber-100 text-amber-800'"
-                                >
-                                    {{ group.function_type }} function
-                                </span>
-                                <h2 class="text-xl font-semibold text-slate-900">
-                                    {{ group.title || '(untitled function)' }}
-                                </h2>
-                            </div>
+                            <h2 class="text-xl font-semibold text-slate-900">Commitment package</h2>
                             <p class="mt-1 text-sm text-slate-500">
                                 {{ group.period_label }}
+                                · {{ group.total_functions }} function{{ group.total_functions === 1 ? '' : 's' }}
                                 · {{ group.total_indicators }} indicator{{ group.total_indicators === 1 ? '' : 's' }}
                                 · Σ Weight <strong>{{ Number(group.total_weight).toFixed(2) }}%</strong>
                                 · {{ group.total_evidence }} evidence file{{ group.total_evidence === 1 ? '' : 's' }}
+                            </p>
+                            <p v-if="group.created_at" class="mt-0.5 text-xs text-slate-500">
+                                Saved {{ new Date(group.created_at).toLocaleString() }}
                             </p>
                         </div>
                     </div>
                 </div>
 
-                <div class="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
-                    <table class="min-w-full border-collapse text-xs">
-                        <thead class="bg-slate-100 text-[11px] font-semibold text-slate-700">
-                            <tr>
-                                <th class="border border-slate-300 px-2 py-2 text-center" style="min-width: 300px">
-                                    Services / Programs / Projects / Indicators
-                                </th>
-                                <th class="border border-slate-300 px-2 py-2 text-center" style="min-width: 72px">Weight</th>
-                                <th class="border border-slate-300 px-2 py-2 text-center" style="min-width: 120px">Annual Office Target</th>
-                                <th class="border border-slate-300 px-2 py-2 text-center" style="min-width: 140px">Individual Annual Targets</th>
-                                <th class="border border-slate-300 px-2 py-2 text-center" style="min-width: 110px">Status</th>
-                                <th class="border border-slate-300 px-2 py-2 text-center" style="min-width: 120px"></th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr v-for="c in commitments" :key="c.id">
-                                <td class="border border-slate-300 px-2 py-2 align-top whitespace-pre-line">{{ c.description || '—' }}</td>
-                                <td class="border border-slate-300 px-2 py-2 text-right align-top">{{ Number(c.weight).toFixed(2) }}%</td>
-                                <td class="border border-slate-300 px-2 py-2 align-top">{{ c.annual_office_target || '—' }}</td>
-                                <td class="border border-slate-300 px-2 py-2 align-top">{{ c.individual_annual_targets || '—' }}</td>
-                                <td class="border border-slate-300 px-2 py-2 text-center align-top">
-                                    <span class="rounded-full px-2 py-0.5 text-[10px] font-semibold ring-1" :class="statusBadge(c.status)">
-                                        {{ c.status.replace('_', ' ') }}
-                                    </span>
-                                </td>
-                                <td class="border border-slate-300 px-2 py-2 text-center align-top">
-                                    <div v-if="canManage(c.status)" class="flex justify-center gap-1">
-                                        <SecondaryButton class="text-[11px]" @click="startEdit(c)">Edit</SecondaryButton>
-                                        <SecondaryButton class="text-[11px] text-rose-700 ring-rose-200" @click="destroyCommitment(c.id)">Delete</SecondaryButton>
-                                    </div>
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
+                <div
+                    v-for="(block, bIdx) in functionBlocks"
+                    :key="bIdx"
+                    class="rounded-xl border border-slate-200 bg-white shadow-sm"
+                >
+                    <div
+                        class="flex flex-wrap items-center justify-between gap-2 border-b px-5 py-3"
+                        :class="block.function_type === 'core'
+                            ? 'bg-blue-50 border-blue-100'
+                            : 'bg-amber-50 border-amber-100'"
+                    >
+                        <div class="flex flex-wrap items-center gap-2">
+                            <span
+                                class="rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide"
+                                :class="block.function_type === 'core'
+                                    ? 'bg-blue-100 text-blue-800'
+                                    : 'bg-amber-100 text-amber-800'"
+                            >
+                                {{ block.function_type }}
+                            </span>
+                            <h3 class="text-sm font-semibold text-slate-900">
+                                {{ block.title || '(untitled function)' }}
+                            </h3>
+                        </div>
+                        <p class="text-xs text-slate-600">
+                            {{ block.items.length }} indicator{{ block.items.length === 1 ? '' : 's' }}
+                            · Σ Weight <strong>{{ block.weight_total.toFixed(2) }}%</strong>
+                        </p>
+                    </div>
+
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full border-collapse text-xs">
+                            <thead class="bg-slate-50 text-[11px] font-semibold text-slate-700">
+                                <tr>
+                                    <th class="border border-slate-200 px-2 py-2 text-center" style="min-width: 300px">
+                                        Services / Programs / Projects / Indicators
+                                    </th>
+                                    <th class="border border-slate-200 px-2 py-2 text-center" style="min-width: 72px">Weight</th>
+                                    <th class="border border-slate-200 px-2 py-2 text-center" style="min-width: 120px">Annual Office Target</th>
+                                    <th class="border border-slate-200 px-2 py-2 text-center" style="min-width: 140px">Individual Annual Targets</th>
+                                    <th class="border border-slate-200 px-2 py-2 text-center" style="min-width: 110px">Status</th>
+                                    <th class="border border-slate-200 px-2 py-2 text-center" style="min-width: 120px"></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr v-for="c in block.items" :key="c.id">
+                                    <td class="border border-slate-200 px-2 py-2 align-top whitespace-pre-line">{{ c.description || '—' }}</td>
+                                    <td class="border border-slate-200 px-2 py-2 text-right align-top">{{ Number(c.weight).toFixed(2) }}%</td>
+                                    <td class="border border-slate-200 px-2 py-2 align-top">{{ c.annual_office_target || '—' }}</td>
+                                    <td class="border border-slate-200 px-2 py-2 align-top">{{ c.individual_annual_targets || '—' }}</td>
+                                    <td class="border border-slate-200 px-2 py-2 text-center align-top">
+                                        <span class="rounded-full px-2 py-0.5 text-[10px] font-semibold ring-1" :class="statusBadge(c.status)">
+                                            {{ c.status.replace('_', ' ') }}
+                                        </span>
+                                    </td>
+                                    <td class="border border-slate-200 px-2 py-2 text-center align-top">
+                                        <div v-if="canManage(c.status)" class="flex justify-center gap-1">
+                                            <SecondaryButton class="text-[11px]" @click="startEdit(c)">Edit</SecondaryButton>
+                                            <SecondaryButton class="text-[11px] text-rose-700 ring-rose-200" @click="destroyCommitment(c.id)">Delete</SecondaryButton>
+                                        </div>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
 
                 <div class="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
                     <h3 class="text-base font-semibold text-slate-900">Evidence per indicator</h3>
                     <p class="mt-1 text-xs text-slate-500">
-                        Each indicator row has its own evidence block — one subject &amp; description, any number of files.
+                        Each indicator has its own evidence block — one subject &amp; description, any number of files.
                     </p>
 
                     <div class="mt-5 space-y-5">
@@ -231,8 +279,19 @@ function submitEvidence(commitmentId) {
                             class="rounded-lg border border-slate-200 bg-slate-50/60 p-4"
                         >
                             <div class="flex flex-wrap items-start justify-between gap-2">
-                                <div>
-                                    <p class="text-sm font-semibold text-slate-900">
+                                <div class="min-w-0 flex-1">
+                                    <div class="flex flex-wrap items-center gap-2">
+                                        <span
+                                            class="rounded-full px-2 py-0.5 text-[10px] font-bold uppercase"
+                                            :class="c.function_type === 'core'
+                                                ? 'bg-blue-100 text-blue-800'
+                                                : 'bg-amber-100 text-amber-800'"
+                                        >
+                                            {{ c.function_type }}
+                                        </span>
+                                        <p class="text-[11px] font-semibold text-slate-600">{{ c.title || '(untitled function)' }}</p>
+                                    </div>
+                                    <p class="mt-1 text-sm font-semibold text-slate-900">
                                         {{ c.description ? c.description.split('\n')[0] : '(no description)' }}
                                     </p>
                                     <p class="text-[11px] text-slate-500">

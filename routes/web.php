@@ -32,6 +32,8 @@ Route::middleware(['auth', 'verified', 'active'])->group(function () {
     });
 
     Route::middleware('role:supervisor')->prefix('supervisor')->name('supervisor.')->group(function () {
+        Route::get('submissions/{submission}', [SubmissionReviewController::class, 'show'])->name('submissions.show');
+        Route::get('submissions/{submission}/export', [SubmissionReviewController::class, 'export'])->name('submissions.export');
         Route::patch('submissions/{submission}', [SubmissionReviewController::class, 'update'])->name('submissions.update');
     });
 

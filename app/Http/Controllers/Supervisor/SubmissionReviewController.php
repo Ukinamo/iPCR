@@ -7,12 +7,53 @@ use App\Enums\SubmissionStatus;
 use App\Http\Controllers\Controller;
 use App\Models\IpcrSubmission;
 use App\Services\AuditLogger;
+use App\Services\IpcrApprovedFormExporter;
 use App\Services\IpcrFormRatingCalculator;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Inertia\Inertia;
+use Inertia\Response;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class SubmissionReviewController extends Controller
 {
+    public function show(Request $request, IpcrSubmission $submission): Response
+    {
+        $supervisor = $request->user();
+        abort_unless($submission->supervisor_id === $supervisor->id, 403);
+
+        $submission->load(['employee', 'commitments.accomplishments']);
+
+        return Inertia::render('Supervisor/SubmissionReview', [
+            'submission' => $submission,
+        ]);
+    }
+
+    public function export(Request $request, IpcrSubmission $submission): StreamedResponse
+    {
+        $supervisor = $request->user();
+        abort_unless($submission->supervisor_id === $supervisor->id, 403);
+        abort_unless($submission->status === SubmissionStatus::Approved, 422);
+
+        $submission->load(['employee', 'commitments', 'supervisor']);
+
+        $spreadsheet = IpcrApprovedFormExporter::exportToSpreadsheet(
+            collect([$submission]),
+            $submission->employee,
+        );
+
+        $writer = new Xlsx($spreadsheet);
+        $safeName = preg_replace('/[^a-zA-Z0-9_-]+/', '-', $submission->employee->name) ?: 'employee';
+        $period = 'Q'.$submission->evaluation_quarter.'-'.$submission->evaluation_year;
+
+        return response()->streamDownload(function () use ($writer): void {
+            $writer->save('php://output');
+        }, "ipcr-{$safeName}-{$period}.xlsx", [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        ]);
+    }
+
     public function update(Request $request, IpcrSubmission $submission): RedirectResponse
     {
         $supervisor = $request->user();
