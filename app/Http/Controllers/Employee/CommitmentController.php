@@ -8,6 +8,7 @@ use App\Models\Accomplishment;
 use App\Models\Commitment;
 use App\Models\User;
 use App\Services\AuditLogger;
+use App\Services\CommitmentPeriodGuard;
 use App\Services\CommitmentWeightRules;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -121,18 +122,17 @@ class CommitmentController extends Controller
             'entries.*.weight' => ['required', 'numeric', 'min:0', 'max:100'],
             'entries.*.annual_office_target' => ['nullable', 'string', 'max:255'],
             'entries.*.individual_annual_targets' => ['nullable', 'string', 'max:255'],
-            'entries.*.evidence_title' => ['nullable', 'string', 'max:255'],
-            'entries.*.evidence_description' => ['nullable', 'string', 'max:8000'],
-            'entries.*.evidence_file' => ['nullable', 'file', 'max:12288', 'mimes:jpg,jpeg,png,gif,webp,pdf,doc,docx,xls,xlsx,txt,zip'],
-            'entries.*.evidence_files' => ['nullable', 'array', 'max:20'],
-            'entries.*.evidence_files.*' => ['file', 'max:12288', 'mimes:jpg,jpeg,png,gif,webp,pdf,doc,docx,xls,xlsx,txt,zip'],
+            'evidence_title' => ['nullable', 'string', 'max:255'],
+            'evidence_description' => ['nullable', 'string', 'max:8000'],
+            'evidence_files' => ['nullable', 'array', 'max:3'],
+            'evidence_files.*' => ['file', 'max:12288', 'mimes:jpg,jpeg,png,gif,webp,pdf,doc,docx,xls,xlsx,txt,zip'],
         ]);
 
         $user = $request->user();
         $year = (int) $data['evaluation_year'];
         $quarter = (int) $data['evaluation_quarter'];
 
-        $this->assertPeriodNotLocked($user, $year, $quarter);
+        $this->assertPeriodNotLocked($user, $year, $quarter, 'entries');
 
         $totals = CommitmentWeightRules::totalsForEditablePeriod($user->id, $year, $quarter);
         $core = $totals['core'];
@@ -154,7 +154,9 @@ class CommitmentController extends Controller
         $batchId = (string) Str::uuid();
 
         DB::transaction(function () use ($request, $user, $data, $batchId) {
-            foreach ($data['entries'] as $index => $entry) {
+            $firstCommitment = null;
+
+            foreach ($data['entries'] as $entry) {
                 $commitment = Commitment::create([
                     'user_id' => $user->id,
                     'batch_id' => $batchId,
@@ -171,61 +173,65 @@ class CommitmentController extends Controller
                     'status' => CommitmentStatus::Draft,
                 ]);
 
+                if ($firstCommitment === null) {
+                    $firstCommitment = $commitment;
+                }
+
                 AuditLogger::log($user->id, 'commitment.created', $commitment, null, $request);
+            }
 
-                $files = data_get($request->file('entries'), $index.'.evidence_files', []);
-                if (! is_array($files)) {
-                    $files = [$files];
-                }
-                $files = array_values(array_filter($files));
+            if ($firstCommitment === null) {
+                return;
+            }
 
-                $singleFile = data_get($request->file('entries'), $index.'.evidence_file');
-                if ($singleFile !== null) {
-                    $files[] = $singleFile;
-                }
+            $files = $request->file('evidence_files') ?? [];
+            if (! is_array($files)) {
+                $files = [$files];
+            }
+            $files = array_values(array_filter($files));
 
-                $sharedTitle = trim((string) ($entry['evidence_title'] ?? ''));
-                $sharedDescription = $entry['evidence_description'] ?? null;
+            $sharedTitle = trim((string) ($data['evidence_title'] ?? ''));
+            $sharedDescription = $data['evidence_description'] ?? null;
 
-                $wantsEvidence = ! empty($files)
-                    || $sharedTitle !== ''
-                    || filled($sharedDescription);
+            $wantsEvidence = ! empty($files)
+                || $sharedTitle !== ''
+                || filled($sharedDescription);
 
-                if (! $wantsEvidence) {
-                    continue;
-                }
+            if (! $wantsEvidence) {
+                return;
+            }
 
-                if ($sharedTitle === '') {
-                    $sharedTitle = $entry['title'];
-                }
+            if ($sharedTitle === '') {
+                $sharedTitle = $firstCommitment->title;
+            }
 
-                if (empty($files)) {
-                    $accomplishment = Accomplishment::create([
-                        'user_id' => $user->id,
-                        'commitment_id' => $commitment->id,
-                        'title' => $sharedTitle,
-                        'description' => $sharedDescription,
-                    ]);
-                    AuditLogger::log($user->id, 'accomplishment.created', $accomplishment, null, $request);
-                    continue;
-                }
+            if (empty($files)) {
+                $accomplishment = Accomplishment::create([
+                    'user_id' => $user->id,
+                    'commitment_id' => $firstCommitment->id,
+                    'title' => $sharedTitle,
+                    'description' => $sharedDescription,
+                ]);
+                AuditLogger::log($user->id, 'accomplishment.created', $accomplishment, null, $request);
 
-                foreach ($files as $file) {
-                    $path = $file->store('commitment-evidence/'.$user->id, 'public');
+                return;
+            }
 
-                    $accomplishment = Accomplishment::create([
-                        'user_id' => $user->id,
-                        'commitment_id' => $commitment->id,
-                        'title' => $sharedTitle,
-                        'description' => $sharedDescription,
-                        'file_path' => $path,
-                        'original_filename' => $file->getClientOriginalName(),
-                        'mime_type' => $file->getClientMimeType() ?: $file->getMimeType(),
-                        'file_size' => $file->getSize(),
-                    ]);
+            foreach ($files as $file) {
+                $path = $file->store('commitment-evidence/'.$user->id, 'public');
 
-                    AuditLogger::log($user->id, 'accomplishment.created', $accomplishment, null, $request);
-                }
+                $accomplishment = Accomplishment::create([
+                    'user_id' => $user->id,
+                    'commitment_id' => $firstCommitment->id,
+                    'title' => $sharedTitle,
+                    'description' => $sharedDescription,
+                    'file_path' => $path,
+                    'original_filename' => $file->getClientOriginalName(),
+                    'mime_type' => $file->getClientMimeType() ?: $file->getMimeType(),
+                    'file_size' => $file->getSize(),
+                ]);
+
+                AuditLogger::log($user->id, 'accomplishment.created', $accomplishment, null, $request);
             }
         });
 
@@ -331,20 +337,9 @@ class CommitmentController extends Controller
         abort_if($commitment->user_id !== $request->user()->id, 403);
     }
 
-    private function assertPeriodNotLocked(User $user, int $year, int $quarter): void
+    private function assertPeriodNotLocked(User $user, int $year, int $quarter, string $errorKey = 'title'): void
     {
-        $submissionExists = Commitment::query()
-            ->where('user_id', $user->id)
-            ->where('evaluation_year', $year)
-            ->where('evaluation_quarter', $quarter)
-            ->where('status', CommitmentStatus::InReview)
-            ->exists();
-
-        if ($submissionExists) {
-            throw ValidationException::withMessages([
-                'title' => 'This quarter is currently with your supervisor for review. You cannot add or change commitments until the package is returned or approved.',
-            ]);
-        }
+        CommitmentPeriodGuard::assertCanAddCommitments($user, $year, $quarter, $errorKey);
     }
 
     /**

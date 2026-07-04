@@ -52,11 +52,17 @@ class LoginRequest extends FormRequest
             ]);
         }
 
-        if (Auth::user()->account_status !== AccountStatus::Active) {
+        $user = Auth::user();
+
+        if ($user->account_status !== AccountStatus::Active) {
             Auth::logout();
 
+            $message = $user->account_status === AccountStatus::Pending
+                ? 'Your registration is pending administrator approval. You will be able to sign in once a supervisor has been assigned to your account.'
+                : 'This account is inactive. Contact an administrator.';
+
             throw ValidationException::withMessages([
-                'email' => 'This account is inactive. Contact an administrator.',
+                'email' => $message,
             ]);
         }
 

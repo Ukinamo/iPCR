@@ -5,6 +5,10 @@ import { Head, Link, router } from '@inertiajs/vue3';
 
 defineProps({
     users: Array,
+    pendingCount: {
+        type: Number,
+        default: 0,
+    },
 });
 
 function roleBadge(role) {
@@ -14,7 +18,9 @@ function roleBadge(role) {
 }
 
 function statusBadge(status) {
-    return status === 'active' ? 'bg-emerald-50 text-emerald-800 ring-emerald-100' : 'bg-slate-100 text-slate-700 ring-slate-200';
+    if (status === 'active') return 'bg-emerald-50 text-emerald-800 ring-emerald-100';
+    if (status === 'pending') return 'bg-amber-50 text-amber-900 ring-amber-100';
+    return 'bg-slate-100 text-slate-700 ring-slate-200';
 }
 
 function destroyUser(id) {
@@ -35,6 +41,14 @@ function destroyUser(id) {
                     <p class="text-sm text-gray-500">Create users and maintain roles in dedicated pages.</p>
                 </div>
                 <div class="flex gap-2">
+                    <Link
+                        v-if="pendingCount > 0"
+                        :href="route('admin.users.pending')"
+                        class="inline-flex items-center gap-2 rounded-md bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700"
+                    >
+                        Pending registrations
+                        <span class="rounded-full bg-white/20 px-2 py-0.5 text-xs">{{ pendingCount }}</span>
+                    </Link>
                     <Link :href="route('admin.users.create')" class="inline-flex rounded-md bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700">
                         + Create user
                     </Link>

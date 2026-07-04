@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Storage;
 
 class Accomplishment extends Model
@@ -21,6 +22,7 @@ class Accomplishment extends Model
 
     protected $appends = [
         'file_url',
+        'download_url',
     ];
 
     public function user(): BelongsTo
@@ -39,6 +41,19 @@ class Accomplishment extends Model
             return null;
         }
 
+        if (! app()->runningInConsole() && Route::has('accomplishments.file')) {
+            return route('accomplishments.file', $this->id);
+        }
+
         return Storage::disk('public')->url($this->file_path);
+    }
+
+    public function getDownloadUrlAttribute(): ?string
+    {
+        if ($this->file_url === null) {
+            return null;
+        }
+
+        return $this->file_url.(str_contains($this->file_url, '?') ? '&' : '?').'download=1';
     }
 }

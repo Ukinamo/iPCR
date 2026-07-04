@@ -1,5 +1,6 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import PrimaryButton from '@/Components/PrimaryButton.vue';
 import SecondaryButton from '@/Components/SecondaryButton.vue';
 import { Head, Link } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
@@ -15,15 +16,21 @@ const activeSubmissions = computed(() =>
     (props.submissions || []).filter((s) => s.status !== 'approved'),
 );
 
+const needsReviewSubmissions = computed(() =>
+    (props.submissions || []).filter((s) => s.status === 'in_review'),
+);
+
+const otherActiveSubmissions = computed(() =>
+    (props.submissions || []).filter((s) => s.status !== 'approved' && s.status !== 'in_review'),
+);
+
+function evidenceCount(s) {
+    return (s.commitments || []).reduce((sum, c) => sum + (c.accomplishments?.length || 0), 0);
+}
+
 const approvedSubmissions = computed(() =>
     (props.submissions || []).filter((s) => s.status === 'approved'),
 );
-
-const expandedRows = ref({});
-
-function toggleRow(id) {
-    expandedRows.value[id] = !expandedRows.value[id];
-}
 
 function badge(status) {
     const map = {
@@ -63,13 +70,6 @@ function reviewButtonLabel(s) {
     if (s.status === 'returned') return 'View package';
     return 'View package';
 }
-
-function accomplishmentPercent(c) {
-    const t = Number(c.rating_target_total ?? 0);
-    const a = Number(c.rating_actual_total ?? 0);
-    if (t <= 0) return null;
-    return (a / t) * 100;
-}
 </script>
 
 <template>
@@ -100,6 +100,7 @@ function accomplishmentPercent(c) {
                     <div class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
                         <p class="text-sm text-slate-600">Pending Review</p>
                         <p class="mt-2 text-3xl font-bold">{{ stats.pendingReview }}</p>
+                        <p v-if="stats.otherActive" class="mt-1 text-xs text-slate-500">{{ stats.otherActive }} returned / draft</p>
                     </div>
                     <div class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
                         <p class="text-sm text-slate-600">Average overall</p>
@@ -122,39 +123,88 @@ function accomplishmentPercent(c) {
                 </div>
 
                 <div v-show="tab === 'team'" class="space-y-4">
-                    <h3 class="text-lg font-semibold text-slate-900">Employee submissions</h3>
-                    <div v-if="!activeSubmissions.length" class="rounded-xl border border-dashed border-slate-200 bg-white p-6 text-center text-sm text-slate-500">
-                        No active submissions right now. Check the <button type="button" class="font-semibold text-blue-700 hover:underline" @click="tab = 'history'">Rating history</button> tab for past approvals.
+                    <div
+                        v-if="needsReviewSubmissions.length"
+                        class="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-950"
+                    >
+                        <p class="font-semibold text-sky-900">
+                            {{ needsReviewSubmissions.length }} package{{ needsReviewSubmissions.length === 1 ? '' : 's' }} waiting for your review
+                        </p>
+                        <p class="mt-1 text-sky-900/85">Open each submission below to rate commitments, review evidence, and approve or return.</p>
                     </div>
-                    <div v-for="s in activeSubmissions" :key="s.id" class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-                        <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                            <div class="flex items-center gap-3">
-                                <div class="flex h-12 w-12 items-center justify-center rounded-full bg-blue-100 text-sm font-bold text-blue-800">
-                                    {{ initials(s.employee.name) }}
+
+                    <h3 class="text-lg font-semibold text-slate-900">Employee submissions</h3>
+
+                    <div v-if="needsReviewSubmissions.length" class="space-y-3">
+                        <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Needs review</p>
+                        <div
+                            v-for="s in needsReviewSubmissions"
+                            :key="'review-' + s.id"
+                            class="rounded-xl border-2 border-sky-200 bg-white p-5 shadow-sm ring-1 ring-sky-100"
+                        >
+                            <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                                <div class="flex items-center gap-3">
+                                    <div class="flex h-12 w-12 items-center justify-center rounded-full bg-sky-100 text-sm font-bold text-sky-800">
+                                        {{ initials(s.employee.name) }}
+                                    </div>
+                                    <div>
+                                        <p class="font-semibold text-slate-900">{{ s.employee.name }}</p>
+                                        <p class="text-xs text-slate-500">{{ periodLabel(s) }} · Submitted {{ formatWhen(s.submitted_at) }}</p>
+                                        <p class="mt-1 text-xs text-slate-600">
+                                            {{ s.commitments?.length ?? 0 }} commitment(s)
+                                            <span v-if="evidenceCount(s)" class="ml-1 rounded-full bg-emerald-50 px-2 py-0.5 font-semibold text-emerald-800 ring-1 ring-emerald-100">
+                                                📎 {{ evidenceCount(s) }} evidence file{{ evidenceCount(s) === 1 ? '' : 's' }}
+                                            </span>
+                                        </p>
+                                    </div>
                                 </div>
-                                <div>
-                                    <p class="font-semibold text-slate-900">{{ s.employee.name }}</p>
-                                    <p class="text-xs text-slate-500">{{ periodLabel(s) }} · Submitted {{ formatWhen(s.submitted_at) }}</p>
-                                    <p v-if="s.commitments?.length" class="mt-1 text-xs text-slate-600">{{ s.commitments.length }} commitment(s) in package</p>
-                                    <p v-if="s.overall_rating" class="mt-1 text-sm font-semibold text-amber-700">Overall: {{ s.overall_rating }}</p>
+                                <div class="flex flex-wrap items-center gap-2">
+                                    <span class="rounded-full bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-800 ring-1 ring-sky-100">
+                                        in review
+                                    </span>
+                                    <Link :href="route('supervisor.submissions.show', s.id)">
+                                        <PrimaryButton type="button" class="!bg-sky-600 hover:!bg-sky-700">Review package</PrimaryButton>
+                                    </Link>
                                 </div>
-                            </div>
-                            <div class="flex flex-wrap items-center gap-2">
-                                <span class="rounded-full px-3 py-1 text-xs font-semibold ring-1" :class="badge(s.status)">
-                                    {{ s.status.replace('_', ' ') }}
-                                </span>
-                                <Link :href="route('supervisor.submissions.show', s.id)">
-                                    <SecondaryButton type="button">{{ reviewButtonLabel(s) }}</SecondaryButton>
-                                </Link>
                             </div>
                         </div>
+                    </div>
+
+                    <div v-if="otherActiveSubmissions.length" class="space-y-3">
+                        <p v-if="needsReviewSubmissions.length" class="text-xs font-semibold uppercase tracking-wide text-slate-500">Other active</p>
+                        <div v-for="s in otherActiveSubmissions" :key="s.id" class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+                            <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                                <div class="flex items-center gap-3">
+                                    <div class="flex h-12 w-12 items-center justify-center rounded-full bg-blue-100 text-sm font-bold text-blue-800">
+                                        {{ initials(s.employee.name) }}
+                                    </div>
+                                    <div>
+                                        <p class="font-semibold text-slate-900">{{ s.employee.name }}</p>
+                                        <p class="text-xs text-slate-500">{{ periodLabel(s) }} · Submitted {{ formatWhen(s.submitted_at) }}</p>
+                                        <p v-if="s.commitments?.length" class="mt-1 text-xs text-slate-600">{{ s.commitments.length }} commitment(s) in package</p>
+                                    </div>
+                                </div>
+                                <div class="flex flex-wrap items-center gap-2">
+                                    <span class="rounded-full px-3 py-1 text-xs font-semibold ring-1" :class="badge(s.status)">
+                                        {{ s.status.replace('_', ' ') }}
+                                    </span>
+                                    <Link :href="route('supervisor.submissions.show', s.id)">
+                                        <SecondaryButton type="button">{{ reviewButtonLabel(s) }}</SecondaryButton>
+                                    </Link>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div v-if="!activeSubmissions.length" class="rounded-xl border border-dashed border-slate-200 bg-white p-6 text-center text-sm text-slate-500">
+                        No active submissions right now. Check the <button type="button" class="font-semibold text-blue-700 hover:underline" @click="tab = 'history'">Rating history</button> tab for past approvals.
                     </div>
                 </div>
 
                 <div v-show="tab === 'history'" class="space-y-4">
                     <div class="flex items-center justify-between">
                         <h3 class="text-lg font-semibold text-slate-900">Rating history</h3>
-                        <p class="text-xs text-slate-500">Approved IPCR submissions from your team. Click <span class="font-semibold">Show</span> to open the full rating sheet, or <span class="font-semibold">Export</span> to download Excel.</p>
+                        <p class="text-xs text-slate-500">Approved IPCR submissions from your team. Open a row to view the full rating sheet and export options.</p>
                     </div>
 
                     <div v-if="!approvedSubmissions.length" class="rounded-xl border border-dashed border-slate-200 bg-white p-8 text-center text-sm text-slate-500">
@@ -174,104 +224,35 @@ function accomplishmentPercent(c) {
                                 </tr>
                             </thead>
                             <tbody class="divide-y divide-slate-100">
-                                <template v-for="s in approvedSubmissions" :key="s.id">
-                                    <tr class="align-top">
-                                        <td class="px-4 py-3">
-                                            <div class="flex items-center gap-2">
-                                                <div class="flex h-8 w-8 items-center justify-center rounded-full bg-blue-100 text-[11px] font-bold text-blue-800">
-                                                    {{ initials(s.employee.name) }}
-                                                </div>
-                                                <div>
-                                                    <p class="font-semibold text-slate-900">{{ s.employee.name }}</p>
-                                                    <p class="text-[11px] text-slate-500">{{ s.employee.email }}</p>
-                                                </div>
+                                <tr v-for="s in approvedSubmissions" :key="s.id" class="align-top">
+                                    <td class="px-4 py-3">
+                                        <div class="flex items-center gap-2">
+                                            <div class="flex h-8 w-8 items-center justify-center rounded-full bg-blue-100 text-[11px] font-bold text-blue-800">
+                                                {{ initials(s.employee.name) }}
                                             </div>
-                                        </td>
-                                        <td class="px-4 py-3 text-slate-700">{{ periodLabel(s) }}</td>
-                                        <td class="px-4 py-3 text-xs text-slate-600">{{ formatWhen(s.reviewed_at) }}</td>
-                                        <td class="px-4 py-3 text-center text-slate-700">{{ s.commitments?.length ?? 0 }}</td>
-                                        <td class="px-4 py-3 text-center">
-                                            <span class="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-800 ring-1 ring-emerald-100">
-                                                {{ s.overall_rating != null ? Number(s.overall_rating).toFixed(2) : '—' }}
-                                            </span>
-                                        </td>
-                                        <td class="px-4 py-3 text-right">
-                                            <div class="flex justify-end gap-2">
-                                                <button
-                                                    type="button"
-                                                    class="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
-                                                    @click="toggleRow(s.id)"
-                                                >
-                                                    {{ expandedRows[s.id] ? 'Hide' : 'Show' }}
-                                                </button>
-                                                <Link
-                                                    :href="route('supervisor.submissions.show', s.id)"
-                                                    class="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
-                                                >
-                                                    Open
-                                                </Link>
-                                                <a
-                                                    :href="route('supervisor.submissions.export', s.id)"
-                                                    class="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-emerald-700"
-                                                >
-                                                    Export
-                                                </a>
+                                            <div>
+                                                <p class="font-semibold text-slate-900">{{ s.employee.name }}</p>
+                                                <p class="text-[11px] text-slate-500">{{ s.employee.email }}</p>
                                             </div>
-                                        </td>
-                                    </tr>
-                                    <tr v-if="expandedRows[s.id]" class="bg-slate-50/70">
-                                        <td colspan="6" class="px-4 py-4">
-                                            <div class="overflow-x-auto rounded-lg border border-slate-200 bg-white">
-                                                <table class="min-w-full border-collapse text-[11px]">
-                                                    <thead class="bg-slate-100 text-[10px] font-semibold uppercase text-slate-600">
-                                                        <tr>
-                                                            <th class="border border-slate-200 px-2 py-1 text-left">Function</th>
-                                                            <th class="border border-slate-200 px-2 py-1 text-left">Title</th>
-                                                            <th class="border border-slate-200 px-2 py-1 text-center">Weight</th>
-                                                            <th class="border border-slate-200 px-2 py-1 text-center">Q3 T/A</th>
-                                                            <th class="border border-slate-200 px-2 py-1 text-center">Q4 T/A</th>
-                                                            <th class="border border-slate-200 px-2 py-1 text-center">%</th>
-                                                            <th class="border border-slate-200 px-2 py-1 text-center">Q</th>
-                                                            <th class="border border-slate-200 px-2 py-1 text-center">E</th>
-                                                            <th class="border border-slate-200 px-2 py-1 text-center">T</th>
-                                                            <th class="border border-slate-200 px-2 py-1 text-center">Avg</th>
-                                                            <th class="border border-slate-200 px-2 py-1 text-left">Remarks</th>
-                                                        </tr>
-                                                    </thead>
-                                                    <tbody>
-                                                        <tr v-for="c in (s.commitments || [])" :key="c.id" class="align-top">
-                                                            <td class="border border-slate-200 px-2 py-1 capitalize">{{ c.function_type }}</td>
-                                                            <td class="border border-slate-200 px-2 py-1">{{ c.title }}</td>
-                                                            <td class="border border-slate-200 px-2 py-1 text-center">{{ Number(c.weight) }}%</td>
-                                                            <td class="border border-slate-200 px-2 py-1 text-center">{{ c.rating_q3_target ?? '—' }} / {{ c.rating_q3_actual ?? '—' }}</td>
-                                                            <td class="border border-slate-200 px-2 py-1 text-center">{{ c.rating_q4_target ?? '—' }} / {{ c.rating_q4_actual ?? '—' }}</td>
-                                                            <td class="border border-slate-200 px-2 py-1 text-center">
-                                                                {{ accomplishmentPercent(c) != null ? accomplishmentPercent(c).toFixed(0) + '%' : '—' }}
-                                                            </td>
-                                                            <td class="border border-slate-200 px-2 py-1 text-center">{{ c.rating_quality ?? '—' }}</td>
-                                                            <td class="border border-slate-200 px-2 py-1 text-center">{{ c.rating_efficiency ?? '—' }}</td>
-                                                            <td class="border border-slate-200 px-2 py-1 text-center">{{ c.rating_timeliness ?? '—' }}</td>
-                                                            <td class="border border-slate-200 px-2 py-1 text-center font-semibold">
-                                                                {{ c.rating_average != null ? Number(c.rating_average).toFixed(2) : '—' }}
-                                                            </td>
-                                                            <td class="border border-slate-200 px-2 py-1">{{ c.remarks || '—' }}</td>
-                                                        </tr>
-                                                        <tr class="bg-slate-100 font-semibold">
-                                                            <td colspan="9" class="border border-slate-200 px-2 py-1 text-right">Overall</td>
-                                                            <td class="border border-slate-200 px-2 py-1 text-center text-amber-800" colspan="2">
-                                                                {{ s.overall_rating != null ? Number(s.overall_rating).toFixed(2) : '—' }}
-                                                            </td>
-                                                        </tr>
-                                                    </tbody>
-                                                </table>
-                                            </div>
-                                            <p v-if="s.supervisor_feedback" class="mt-3 text-xs text-slate-600">
-                                                <span class="font-semibold text-slate-700">Feedback:</span>
-                                                {{ s.supervisor_feedback }}
-                                            </p>
-                                        </td>
-                                    </tr>
-                                </template>
+                                        </div>
+                                    </td>
+                                    <td class="px-4 py-3 text-slate-700">{{ periodLabel(s) }}</td>
+                                    <td class="px-4 py-3 text-xs text-slate-600">{{ formatWhen(s.reviewed_at) }}</td>
+                                    <td class="px-4 py-3 text-center text-slate-700">{{ s.commitments?.length ?? 0 }}</td>
+                                    <td class="px-4 py-3 text-center">
+                                        <span class="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-800 ring-1 ring-emerald-100">
+                                            {{ s.overall_rating != null ? Number(s.overall_rating).toFixed(2) : '—' }}
+                                        </span>
+                                    </td>
+                                    <td class="px-4 py-3 text-right">
+                                        <Link
+                                            :href="route('supervisor.submissions.show', s.id)"
+                                            class="inline-flex rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+                                        >
+                                            Open
+                                        </Link>
+                                    </td>
+                                </tr>
                             </tbody>
                         </table>
                     </div>

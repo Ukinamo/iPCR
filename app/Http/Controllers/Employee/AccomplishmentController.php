@@ -6,11 +6,14 @@ use App\Enums\CommitmentStatus;
 use App\Http\Controllers\Controller;
 use App\Models\Accomplishment;
 use App\Models\Commitment;
+use App\Models\User;
 use App\Services\AuditLogger;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class AccomplishmentController extends Controller
 {
@@ -24,7 +27,7 @@ class AccomplishmentController extends Controller
             'title' => ['nullable', 'string', 'max:255'],
             'description' => ['nullable', 'string', 'max:8000'],
             'commitment_id' => ['required', 'exists:commitments,id'],
-            'files' => ['nullable', 'array', 'max:20'],
+            'files' => ['nullable', 'array', 'max:3'],
             'files.*' => ['file', 'max:12288', 'mimes:jpg,jpeg,png,gif,webp,pdf,doc,docx,xls,xlsx,txt,zip'],
             'file' => ['nullable', 'file', 'max:12288', 'mimes:jpg,jpeg,png,gif,webp,pdf,doc,docx,xls,xlsx,txt,zip'],
         ]);
@@ -41,7 +44,7 @@ class AccomplishmentController extends Controller
             ]);
         }
 
-        /** @var list<\Illuminate\Http\UploadedFile> $files */
+        /** @var list<UploadedFile> $files */
         $files = $request->file('files') ?? [];
         if (! is_array($files)) {
             $files = [$files];
@@ -129,5 +132,50 @@ class AccomplishmentController extends Controller
         AuditLogger::log($user->id, 'accomplishment.deleted', null, ['id' => $deletedId], $request);
 
         return back()->with('status', 'Evidence removed.');
+    }
+
+    public function file(Request $request, Accomplishment $accomplishment): StreamedResponse
+    {
+        $this->authorizeFileAccess($request->user(), $accomplishment);
+
+        abort_unless(
+            filled($accomplishment->file_path) && Storage::disk('public')->exists($accomplishment->file_path),
+            404,
+        );
+
+        $filename = $accomplishment->original_filename ?? basename($accomplishment->file_path);
+        $mime = $accomplishment->mime_type
+            ?? Storage::disk('public')->mimeType($accomplishment->file_path)
+            ?? 'application/octet-stream';
+
+        $disposition = $request->boolean('download') ? 'attachment' : 'inline';
+
+        return Storage::disk('public')->response($accomplishment->file_path, $filename, [
+            'Content-Type' => $mime,
+            'Content-Disposition' => $disposition.'; filename="'.str_replace('"', '', $filename).'"',
+        ]);
+    }
+
+    private function authorizeFileAccess(User $user, Accomplishment $accomplishment): void
+    {
+        if ($accomplishment->user_id === $user->id) {
+            return;
+        }
+
+        if ($user->isAdministrator()) {
+            return;
+        }
+
+        if ($user->isSupervisor()) {
+            $owner = $accomplishment->relationLoaded('user')
+                ? $accomplishment->user
+                : User::query()->find($accomplishment->user_id);
+
+            if ($owner !== null && $owner->supervisor_id === $user->id) {
+                return;
+            }
+        }
+
+        abort(403);
     }
 }

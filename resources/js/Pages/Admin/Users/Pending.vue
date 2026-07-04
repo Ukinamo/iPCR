@@ -1,0 +1,123 @@
+<script setup>
+import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import InputLabel from '@/Components/InputLabel.vue';
+import PrimaryButton from '@/Components/PrimaryButton.vue';
+import SecondaryButton from '@/Components/SecondaryButton.vue';
+import { Head, Link, router, usePage } from '@inertiajs/vue3';
+import { reactive } from 'vue';
+
+defineProps({
+    pendingUsers: Array,
+    supervisors: Array,
+});
+
+const page = usePage();
+const supervisorSelections = reactive({});
+const processing = reactive({});
+
+function approve(userId) {
+    processing[userId] = true;
+
+    router.patch(
+        route('admin.users.approve', userId),
+        { supervisor_id: supervisorSelections[userId] },
+        {
+            preserveScroll: true,
+            onFinish: () => {
+                processing[userId] = false;
+            },
+        },
+    );
+}
+
+function reject(userId, name) {
+    if (confirm(`Reject and remove the registration for ${name}?`)) {
+        router.delete(route('admin.users.reject', userId), { preserveScroll: true });
+    }
+}
+
+function formatDate(value) {
+    if (!value) return '—';
+    return new Date(value).toLocaleString();
+}
+</script>
+
+<template>
+    <Head title="Pending Registrations" />
+
+    <AuthenticatedLayout>
+        <template #header>
+            <div class="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                    <h2 class="text-xl font-semibold leading-tight text-gray-800">Pending Registrations</h2>
+                    <p class="text-sm text-gray-500">Review new employee sign-ups and assign a supervisor before activating their account.</p>
+                </div>
+                <div class="flex gap-2">
+                    <Link :href="route('admin.users.index')" class="inline-flex rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+                        All users
+                    </Link>
+                    <Link :href="route('dashboard')" class="inline-flex rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+                        Back dashboard
+                    </Link>
+                </div>
+            </div>
+        </template>
+
+        <div class="py-8">
+            <div class="mx-auto max-w-7xl sm:px-6 lg:px-8">
+                <div v-if="page.props.flash?.status" class="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-900">
+                    {{ page.props.flash.status }}
+                </div>
+
+                <div v-if="!pendingUsers.length" class="rounded-xl border border-dashed border-slate-200 bg-white p-10 text-center text-sm text-slate-500 shadow-sm">
+                    No registrations waiting for approval.
+                </div>
+
+                <div v-else class="space-y-4">
+                    <div
+                        v-for="u in pendingUsers"
+                        :key="u.id"
+                        class="rounded-xl border border-amber-200 bg-white p-5 shadow-sm"
+                    >
+                        <div class="flex flex-wrap items-start justify-between gap-4">
+                            <div>
+                                <p class="font-semibold text-slate-900">{{ u.name }}</p>
+                                <p class="text-sm text-slate-600">{{ u.email }}</p>
+                                <p class="mt-1 text-xs text-slate-500">Registered {{ formatDate(u.created_at) }}</p>
+                            </div>
+                            <span class="rounded-full bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-900 ring-1 ring-amber-100">pending approval</span>
+                        </div>
+
+                        <form class="mt-4 grid gap-4 md:grid-cols-[1fr_auto_auto]" @submit.prevent="approve(u.id)">
+                            <div>
+                                <InputLabel :for="`supervisor-${u.id}`" value="Assign supervisor" />
+                                <select
+                                    :id="`supervisor-${u.id}`"
+                                    v-model="supervisorSelections[u.id]"
+                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
+                                    required
+                                >
+                                    <option value="">Select supervisor</option>
+                                    <option v-for="s in supervisors" :key="s.id" :value="s.id">{{ s.name }} — {{ s.email }}</option>
+                                </select>
+                            </div>
+                            <div class="flex items-end">
+                                <PrimaryButton
+                                    class="bg-emerald-600 hover:bg-emerald-700 focus:ring-emerald-500"
+                                    :disabled="processing[u.id]"
+                                >
+                                    Approve
+                                </PrimaryButton>
+                            </div>
+                            <div class="flex items-end">
+                                <SecondaryButton type="button" class="text-rose-700 ring-rose-200" @click="reject(u.id, u.name)">
+                                    Reject
+                                </SecondaryButton>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </AuthenticatedLayout>
+</template>

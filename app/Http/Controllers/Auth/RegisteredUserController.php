@@ -9,7 +9,6 @@ use App\Models\User;
 use Illuminate\Auth\Events\Registered;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\Rules;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
@@ -43,15 +42,17 @@ class RegisteredUserController extends Controller
             'email' => $request->email,
             'password' => $request->password,
             'role' => UserRole::Employee,
-            'account_status' => AccountStatus::Active,
+            'account_status' => AccountStatus::Pending,
+            'supervisor_id' => null,
         ]);
 
         event(new Registered($user));
 
-        Auth::login($user);
-
         $request->session()->forget('login_portal_role');
 
-        return redirect(route('dashboard', absolute: false));
+        return redirect(route('login'))->with(
+            'status',
+            'Registration submitted. An administrator will review your account and assign a supervisor before you can sign in.',
+        );
     }
 }

@@ -7,13 +7,13 @@ use App\Enums\SubmissionStatus;
 use App\Http\Controllers\Controller;
 use App\Models\IpcrSubmission;
 use App\Services\AuditLogger;
-use App\Services\IpcrApprovedFormExporter;
 use App\Services\IpcrFormRatingCalculator;
+use App\Services\IpcrSubmissionExportService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response as HttpResponse;
 use Inertia\Inertia;
 use Inertia\Response;
-use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class SubmissionReviewController extends Controller
@@ -30,28 +30,20 @@ class SubmissionReviewController extends Controller
         ]);
     }
 
-    public function export(Request $request, IpcrSubmission $submission): StreamedResponse
+    public function export(Request $request, IpcrSubmission $submission, string $format = 'xlsx'): StreamedResponse
     {
-        $supervisor = $request->user();
-        abort_unless($submission->supervisor_id === $supervisor->id, 403);
-        abort_unless($submission->status === SubmissionStatus::Approved, 422);
+        abort_unless(in_array($format, ['xlsx', 'csv', 'pdf'], true), 404);
 
-        $submission->load(['employee', 'commitments', 'supervisor']);
+        $submission = IpcrSubmissionExportService::authorizeApprovedExport($request, $submission);
 
-        $spreadsheet = IpcrApprovedFormExporter::exportToSpreadsheet(
-            collect([$submission]),
-            $submission->employee,
-        );
+        return IpcrSubmissionExportService::download($submission, $format);
+    }
 
-        $writer = new Xlsx($spreadsheet);
-        $safeName = preg_replace('/[^a-zA-Z0-9_-]+/', '-', $submission->employee->name) ?: 'employee';
-        $period = 'Q'.$submission->evaluation_quarter.'-'.$submission->evaluation_year;
+    public function print(Request $request, IpcrSubmission $submission): HttpResponse
+    {
+        $submission = IpcrSubmissionExportService::authorizeApprovedExport($request, $submission);
 
-        return response()->streamDownload(function () use ($writer): void {
-            $writer->save('php://output');
-        }, "ipcr-{$safeName}-{$period}.xlsx", [
-            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        ]);
+        return IpcrSubmissionExportService::inlinePrint($submission);
     }
 
     public function update(Request $request, IpcrSubmission $submission): RedirectResponse

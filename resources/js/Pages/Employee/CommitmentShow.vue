@@ -1,5 +1,6 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import EvidencePanel from '@/Components/EvidencePanel.vue';
 import InputError from '@/Components/InputError.vue';
 import InputLabel from '@/Components/InputLabel.vue';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
@@ -53,15 +54,6 @@ function statusBadge(status) {
     return map[status] ?? map.draft;
 }
 
-function formatFileSize(bytes) {
-    if (bytes == null || bytes === '') return '';
-    const n = Number(bytes);
-    if (!Number.isFinite(n) || n <= 0) return '';
-    if (n < 1024) return `${n} B`;
-    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-    return `${(n / (1024 * 1024)).toFixed(1)} MB`;
-}
-
 const editId = ref(null);
 const editForm = useForm({
     title: '',
@@ -105,60 +97,62 @@ function destroyEvidence(id) {
     }
 }
 
-const evidenceDrafts = reactive({});
-const evidenceFileKeys = reactive({});
-const evidenceErrors = reactive({});
-const evidenceSubmitting = reactive({});
-
-function ensureEvidenceDraft(commitmentId) {
-    if (!evidenceDrafts[commitmentId]) {
-        evidenceDrafts[commitmentId] = { title: '', description: '', files: [] };
+const packageEvidence = computed(() => {
+    const list = [];
+    for (const c of props.commitments || []) {
+        for (const ev of c.accomplishments || []) {
+            list.push({
+                ...ev,
+                can_remove: canManage(c.status),
+            });
+        }
     }
-    if (evidenceFileKeys[commitmentId] == null) {
-        evidenceFileKeys[commitmentId] = 0;
-    }
-    return evidenceDrafts[commitmentId];
-}
+    return list.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+});
 
-function setEvidenceFiles(commitmentId, event) {
-    const draft = ensureEvidenceDraft(commitmentId);
-    const fl = event.target.files;
-    draft.files = fl && fl.length ? Array.from(fl) : [];
-}
+const canManagePackage = computed(() =>
+    (props.commitments || []).some((c) => canManage(c.status)),
+);
 
-function removeEvidenceFile(commitmentId, index) {
-    const draft = ensureEvidenceDraft(commitmentId);
-    draft.files.splice(index, 1);
-}
+const evidenceTargetCommitment = computed(() =>
+    (props.commitments || []).find((c) => canManage(c.status)) ?? null,
+);
 
-function submitEvidence(commitmentId) {
-    const draft = ensureEvidenceDraft(commitmentId);
-    if (!draft.files.length && !draft.title.trim()) {
-        evidenceErrors[commitmentId] = 'Attach at least one file, or provide a subject.';
+const evidenceDraft = reactive({ title: '', description: '', files: [] });
+const evidenceError = ref('');
+const evidenceSubmitting = ref(false);
+
+function submitEvidence() {
+    const target = evidenceTargetCommitment.value;
+    if (!target) return;
+
+    if (!evidenceDraft.files.length && !evidenceDraft.title.trim()) {
+        evidenceError.value = 'Attach at least one file, or provide a subject.';
         return;
     }
-    evidenceErrors[commitmentId] = '';
+    evidenceError.value = '';
 
     const fd = new FormData();
-    fd.append('commitment_id', String(commitmentId));
-    fd.append('title', draft.title ?? '');
-    fd.append('description', draft.description ?? '');
-    draft.files.forEach((f) => fd.append('files[]', f));
+    fd.append('commitment_id', String(target.id));
+    fd.append('title', evidenceDraft.title ?? '');
+    fd.append('description', evidenceDraft.description ?? '');
+    evidenceDraft.files.forEach((f) => fd.append('files[]', f));
 
-    evidenceSubmitting[commitmentId] = true;
+    evidenceSubmitting.value = true;
     router.post(route('employee.accomplishments.store'), fd, {
         forceFormData: true,
         preserveScroll: true,
         onSuccess: () => {
-            evidenceDrafts[commitmentId] = { title: '', description: '', files: [] };
-            evidenceFileKeys[commitmentId] = (evidenceFileKeys[commitmentId] || 0) + 1;
-            evidenceErrors[commitmentId] = '';
+            evidenceDraft.title = '';
+            evidenceDraft.description = '';
+            evidenceDraft.files = [];
+            evidenceError.value = '';
         },
         onError: (errors) => {
-            evidenceErrors[commitmentId] = errors.files || errors.title || errors.commitment_id || 'Upload failed.';
+            evidenceError.value = errors.files || errors.title || errors.commitment_id || 'Upload failed.';
         },
         onFinish: () => {
-            evidenceSubmitting[commitmentId] = false;
+            evidenceSubmitting.value = false;
         },
     });
 }
@@ -190,7 +184,13 @@ function submitEvidence(commitmentId) {
                                 · {{ group.total_functions }} function{{ group.total_functions === 1 ? '' : 's' }}
                                 · {{ group.total_indicators }} indicator{{ group.total_indicators === 1 ? '' : 's' }}
                                 · Σ Weight <strong>{{ Number(group.total_weight).toFixed(2) }}%</strong>
-                                · {{ group.total_evidence }} evidence file{{ group.total_evidence === 1 ? '' : 's' }}
+                                <span
+                                    v-if="group.total_evidence"
+                                    class="ml-1 inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-800 ring-1 ring-emerald-100"
+                                >
+                                    📎 {{ group.total_evidence }} evidence file{{ group.total_evidence === 1 ? '' : 's' }}
+                                </span>
+                                <span v-else class="ml-1 text-slate-400">· no evidence yet</span>
                             </p>
                             <p v-if="group.created_at" class="mt-0.5 text-xs text-slate-500">
                                 Saved {{ new Date(group.created_at).toLocaleString() }}
@@ -267,139 +267,18 @@ function submitEvidence(commitmentId) {
                 </div>
 
                 <div class="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-                    <h3 class="text-base font-semibold text-slate-900">Evidence per indicator</h3>
-                    <p class="mt-1 text-xs text-slate-500">
-                        Each indicator has its own evidence block — one subject &amp; description, any number of files.
-                    </p>
-
-                    <div class="mt-5 space-y-5">
-                        <div
-                            v-for="c in commitments"
-                            :key="'ev-' + c.id"
-                            class="rounded-lg border border-slate-200 bg-slate-50/60 p-4"
-                        >
-                            <div class="flex flex-wrap items-start justify-between gap-2">
-                                <div class="min-w-0 flex-1">
-                                    <div class="flex flex-wrap items-center gap-2">
-                                        <span
-                                            class="rounded-full px-2 py-0.5 text-[10px] font-bold uppercase"
-                                            :class="c.function_type === 'core'
-                                                ? 'bg-blue-100 text-blue-800'
-                                                : 'bg-amber-100 text-amber-800'"
-                                        >
-                                            {{ c.function_type }}
-                                        </span>
-                                        <p class="text-[11px] font-semibold text-slate-600">{{ c.title || '(untitled function)' }}</p>
-                                    </div>
-                                    <p class="mt-1 text-sm font-semibold text-slate-900">
-                                        {{ c.description ? c.description.split('\n')[0] : '(no description)' }}
-                                    </p>
-                                    <p class="text-[11px] text-slate-500">
-                                        Weight {{ Number(c.weight).toFixed(2) }}% ·
-                                        <span class="rounded-full px-2 py-0.5 font-semibold ring-1" :class="statusBadge(c.status)">
-                                            {{ c.status.replace('_', ' ') }}
-                                        </span>
-                                    </p>
-                                </div>
-                            </div>
-
-                            <ul v-if="c.accomplishments?.length" class="mt-3 space-y-2">
-                                <li
-                                    v-for="ev in c.accomplishments"
-                                    :key="ev.id"
-                                    class="flex flex-wrap items-start justify-between gap-2 rounded border border-slate-200 bg-white px-3 py-2 text-sm"
-                                >
-                                    <div class="min-w-0 flex-1">
-                                        <p class="font-medium text-slate-900">{{ ev.title }}</p>
-                                        <p v-if="ev.description" class="mt-1 text-xs text-slate-600">{{ ev.description }}</p>
-                                        <p v-if="ev.original_filename" class="mt-1 text-xs text-slate-500">
-                                            File: {{ ev.original_filename }}
-                                            <span v-if="ev.file_size"> · {{ formatFileSize(ev.file_size) }}</span>
-                                        </p>
-                                        <a
-                                            v-if="ev.file_url"
-                                            :href="ev.file_url"
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            class="mt-1 inline-block text-xs font-semibold text-blue-700 hover:underline"
-                                        >
-                                            Open attachment
-                                        </a>
-                                    </div>
-                                    <SecondaryButton
-                                        v-if="canManage(c.status)"
-                                        class="shrink-0 text-xs text-rose-700 ring-rose-200"
-                                        @click="destroyEvidence(ev.id)"
-                                    >
-                                        Remove
-                                    </SecondaryButton>
-                                </li>
-                            </ul>
-                            <p v-else class="mt-3 text-xs text-slate-400">No evidence yet for this indicator.</p>
-
-                            <form
-                                v-if="canManage(c.status)"
-                                class="mt-4 rounded-md border border-emerald-100 bg-emerald-50/40 p-3"
-                                @submit.prevent="submitEvidence(c.id)"
-                            >
-                                <p class="text-xs font-semibold uppercase tracking-wide text-emerald-900">Add evidence</p>
-                                <div class="mt-3 grid gap-3 md:grid-cols-2">
-                                    <div>
-                                        <InputLabel :value="'Subject / title'" />
-                                        <TextInput
-                                            :model-value="ensureEvidenceDraft(c.id).title"
-                                            type="text"
-                                            class="mt-1 block w-full text-xs"
-                                            placeholder="e.g. Q3 accomplishment report"
-                                            @update:model-value="(v) => (evidenceDrafts[c.id].title = v)"
-                                        />
-                                    </div>
-                                    <div>
-                                        <InputLabel :value="'Description (optional)'" />
-                                        <TextInput
-                                            :model-value="ensureEvidenceDraft(c.id).description"
-                                            type="text"
-                                            class="mt-1 block w-full text-xs"
-                                            placeholder="Short note"
-                                            @update:model-value="(v) => (evidenceDrafts[c.id].description = v)"
-                                        />
-                                    </div>
-                                    <div class="md:col-span-2">
-                                        <InputLabel :value="'Files (one or many)'" />
-                                        <input
-                                            :key="evidenceFileKeys[c.id] || 0"
-                                            type="file"
-                                            multiple
-                                            class="mt-1 block w-full text-xs text-slate-700 file:mr-3 file:rounded-md file:border-0 file:bg-blue-600 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-white hover:file:bg-blue-700"
-                                            @change="(e) => setEvidenceFiles(c.id, e)"
-                                        />
-                                        <p class="mt-1 text-[10px] text-slate-500">
-                                            jpg, png, gif, webp, pdf, doc, docx, xls, xlsx, txt, zip · up to 12 MB each, 20 files per upload.
-                                        </p>
-                                        <ul
-                                            v-if="ensureEvidenceDraft(c.id).files.length"
-                                            class="mt-2 space-y-1 text-[11px] text-slate-700"
-                                        >
-                                            <li
-                                                v-for="(f, i) in ensureEvidenceDraft(c.id).files"
-                                                :key="i"
-                                                class="flex items-center justify-between gap-2 rounded border border-slate-200 bg-white px-2 py-1"
-                                            >
-                                                <span class="truncate">{{ f.name }} <span class="text-slate-400">· {{ formatFileSize(f.size) }}</span></span>
-                                                <button type="button" class="text-rose-700 hover:underline" @click="removeEvidenceFile(c.id, i)">Remove</button>
-                                            </li>
-                                        </ul>
-                                        <p v-if="evidenceErrors[c.id]" class="mt-2 text-xs text-rose-700">{{ evidenceErrors[c.id] }}</p>
-                                    </div>
-                                </div>
-                                <div class="mt-3 flex gap-2">
-                                    <PrimaryButton type="submit" :disabled="!!evidenceSubmitting[c.id]">
-                                        {{ evidenceSubmitting[c.id] ? 'Uploading…' : 'Save evidence' }}
-                                    </PrimaryButton>
-                                </div>
-                            </form>
-                        </div>
-                    </div>
+                    <EvidencePanel
+                        :items="packageEvidence"
+                        :editable="canManagePackage"
+                        :show-form="canManagePackage"
+                        :submitting="evidenceSubmitting"
+                        :error="evidenceError"
+                        v-model:title="evidenceDraft.title"
+                        v-model:description="evidenceDraft.description"
+                        v-model:files="evidenceDraft.files"
+                        @submit="submitEvidence"
+                        @remove="destroyEvidence"
+                    />
                 </div>
 
                 <div

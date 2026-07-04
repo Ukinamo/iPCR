@@ -1,5 +1,7 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import EvidencePanel from '@/Components/EvidencePanel.vue';
+import IpcrExportDropdown from '@/Components/IpcrExportDropdown.vue';
 import InputError from '@/Components/InputError.vue';
 import InputLabel from '@/Components/InputLabel.vue';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
@@ -18,6 +20,23 @@ const isEditable = computed(() => props.submission?.status === 'in_review');
 const sortedCommitments = computed(() =>
     [...(props.submission?.commitments || [])].sort((a, b) => a.id - b.id),
 );
+
+const packageEvidence = computed(() => {
+    const seen = new Set();
+    const list = [];
+
+    for (const c of sortedCommitments.value) {
+        for (const ev of c.accomplishments || []) {
+            if (seen.has(ev.id)) {
+                continue;
+            }
+            seen.add(ev.id);
+            list.push(ev);
+        }
+    }
+
+    return list.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+});
 
 const reviewForm = useForm({
     action: 'approve',
@@ -88,6 +107,60 @@ function indicatorLines(c) {
     if (!desc) return [c?.title ?? ''];
     const lines = desc.split(/\r\n|\r|\n/).map((l) => l.trim()).filter(Boolean);
     return lines.length ? lines : [c?.title ?? ''];
+}
+
+function functionTitleKey(c) {
+    return (c.title || '').trim() || '(untitled function)';
+}
+
+function buildSectionLayout(functionType) {
+    const commitments = sortedCommitments.value.filter((c) => c.function_type === functionType);
+    const order = [];
+    const map = new Map();
+
+    for (const c of commitments) {
+        const key = functionTitleKey(c);
+        if (!map.has(key)) {
+            map.set(key, { title: key, commitments: [] });
+            order.push(key);
+        }
+        map.get(key).commitments.push(c);
+    }
+
+    return order.map((key) => {
+        const group = map.get(key);
+        const rows = [];
+
+        for (const c of group.commitments) {
+            const lines = indicatorLines(c);
+            lines.forEach((line, lineIndex) => {
+                rows.push({
+                    commitment: c,
+                    line,
+                    lineIndex,
+                    lineCount: lines.length,
+                });
+            });
+        }
+
+        return {
+            title: group.title,
+            commitments: group.commitments,
+            rows,
+            rowCount: rows.length,
+        };
+    });
+}
+
+const sectionLayout = computed(() => ({
+    core: buildSectionLayout('core'),
+    strategic: buildSectionLayout('strategic'),
+}));
+
+function sectionWeightTotal(functionType) {
+    return sortedCommitments.value
+        .filter((c) => c.function_type === functionType)
+        .reduce((sum, c) => sum + Number(c.weight || 0), 0);
 }
 
 function ratingRow(id) {
@@ -167,20 +240,14 @@ function badge(status) {
                     <Link :href="route('dashboard')" class="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50">
                         ← Back to dashboard
                     </Link>
-                    <a
-                        v-if="isApproved"
-                        :href="route('supervisor.submissions.export', submission.id)"
-                        class="rounded-md bg-emerald-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700"
-                    >
-                        Export Excel
-                    </a>
+                    <IpcrExportDropdown v-if="isApproved" :submission-id="submission.id" />
                 </div>
             </div>
         </template>
 
-        <div class="py-8">
-            <div class="mx-auto max-w-7xl space-y-6 sm:px-6 lg:px-8">
-                <div class="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div class="py-6">
+            <div class="mx-auto w-full max-w-[100vw] space-y-5 px-3 sm:px-4 lg:px-6">
+                <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
                     <p class="text-sm font-semibold text-slate-800">IPCR Form 1 — Evaluation</p>
                     <p class="mt-1 text-xs text-slate-500">
                         <template v-if="isEditable">
@@ -215,7 +282,7 @@ function badge(status) {
                                     <th class="border border-slate-300 px-2 py-1" rowspan="2">Q</th>
                                     <th class="border border-slate-300 px-2 py-1" rowspan="2">E</th>
                                     <th class="border border-slate-300 px-2 py-1" rowspan="2">T</th>
-                                    <th class="border border-slate-300 px-2 py-1" rowspan="2">Average</th>
+                                    <th class="border border-slate-300 px-2 py-1" rowspan="2">Avg</th>
                                 </tr>
                                 <tr>
                                     <th class="border border-slate-300 px-2 py-1">Target</th>
@@ -229,98 +296,99 @@ function badge(status) {
                             </thead>
                             <tbody>
                                 <template v-for="group in ['core', 'strategic']" :key="group">
-                                    <tr
-                                        v-if="sortedCommitments.some((c) => c.function_type === group)"
-                                        :class="group === 'core' ? 'bg-blue-50' : 'bg-amber-50'"
-                                    >
+                                    <tr v-if="sectionLayout[group].length" :class="group === 'core' ? 'bg-blue-50/90' : 'bg-amber-50/90'">
                                         <td
                                             colspan="17"
-                                            class="border border-slate-300 px-2 py-1 text-center text-[11px] font-bold uppercase tracking-wide"
+                                            class="border border-slate-300 px-3 py-2 text-center text-[10px] font-bold uppercase tracking-wide"
                                             :class="group === 'core' ? 'text-blue-900' : 'text-amber-900'"
                                         >
-                                            {{ group === 'core' ? 'Core Functions (60%)' : 'Strategic Functions (40%)' }}
+                                            {{ group === 'core' ? 'Core Functions' : 'Strategic Functions' }}
+                                            · {{ sectionWeightTotal(group).toFixed(0) }}%
                                         </td>
                                     </tr>
-                                    <template
-                                        v-for="c in sortedCommitments.filter((c) => c.function_type === group)"
-                                        :key="c.id"
-                                    >
+                                    <template v-for="(fnGroup, fgIdx) in sectionLayout[group]" :key="group + '-' + fgIdx">
+                                        <tr v-if="fgIdx > 0" aria-hidden="true">
+                                            <td colspan="17" class="h-3 border border-slate-300 bg-white p-0"></td>
+                                        </tr>
                                         <tr
-                                            v-for="(line, li) in indicatorLines(c)"
-                                            :key="c.id + '-' + li"
+                                            v-for="(row, ri) in fnGroup.rows"
+                                            :key="row.commitment.id + '-' + row.lineIndex"
                                             class="align-top"
                                         >
-                                            <td v-if="li === 0" :rowspan="indicatorLines(c).length" class="border border-slate-300 px-2 py-1 font-semibold text-slate-800">
-                                                {{ c.title }}
+                                            <td
+                                                v-if="ri === 0"
+                                                :rowspan="fnGroup.rowCount"
+                                                class="border border-slate-300 px-2 py-1 align-top font-semibold text-slate-800"
+                                            >
+                                                {{ fnGroup.title }}
                                             </td>
-                                            <td class="border border-slate-300 px-2 py-1 text-slate-700">{{ line }}</td>
-                                            <td v-if="li === 0" :rowspan="indicatorLines(c).length" class="border border-slate-300 px-2 py-1 text-center">{{ Number(c.weight) }}%</td>
-                                            <td v-if="li === 0" :rowspan="indicatorLines(c).length" class="border border-slate-300 px-2 py-1 text-center">{{ c.annual_office_target ?? '—' }}</td>
-                                            <td v-if="li === 0" :rowspan="indicatorLines(c).length" class="border border-slate-300 px-2 py-1 text-center">{{ c.individual_annual_targets ?? '—' }}</td>
-                                            <template v-if="li === 0 && ratingRow(c.id)">
-                                                <td :rowspan="indicatorLines(c).length" class="border border-slate-300 px-1 py-1">
-                                                    <TextInput v-if="isEditable" v-model="ratingRow(c.id).rating_q3_target" type="number" step="any" class="w-20 text-xs" />
-                                                    <span v-else class="block text-center text-slate-700">{{ ratingRow(c.id).rating_q3_target ?? '—' }}</span>
+                                            <td class="border border-slate-300 px-2 py-1 text-slate-700">{{ row.line }}</td>
+                                            <td
+                                                v-if="row.lineIndex === 0"
+                                                :rowspan="row.lineCount"
+                                                class="border border-slate-300 px-2 py-1 text-center font-medium text-slate-800"
+                                            >
+                                                {{ Number(row.commitment.weight).toFixed(0) }}%
+                                            </td>
+                                            <td
+                                                v-if="row.lineIndex === 0"
+                                                :rowspan="row.lineCount"
+                                                class="border border-slate-300 px-2 py-1 text-center text-slate-700"
+                                            >
+                                                {{ row.commitment.annual_office_target ?? '—' }}
+                                            </td>
+                                            <td
+                                                v-if="row.lineIndex === 0"
+                                                :rowspan="row.lineCount"
+                                                class="border border-slate-300 px-2 py-1 text-center text-slate-700"
+                                            >
+                                                {{ row.commitment.individual_annual_targets ?? '—' }}
+                                            </td>
+                                            <template v-if="row.lineIndex === 0 && ratingRow(row.commitment.id)">
+                                                <td :rowspan="row.lineCount" class="border border-slate-300 px-1 py-1">
+                                                    <TextInput v-if="isEditable" v-model="ratingRow(row.commitment.id).rating_q3_target" type="number" step="any" class="w-16 text-xs" />
+                                                    <span v-else class="block text-center text-slate-700">{{ ratingRow(row.commitment.id).rating_q3_target ?? '—' }}</span>
                                                 </td>
-                                                <td :rowspan="indicatorLines(c).length" class="border border-slate-300 px-1 py-1">
-                                                    <TextInput v-if="isEditable" v-model="ratingRow(c.id).rating_q3_actual" type="number" step="any" class="w-20 text-xs" />
-                                                    <span v-else class="block text-center text-slate-700">{{ ratingRow(c.id).rating_q3_actual ?? '—' }}</span>
+                                                <td :rowspan="row.lineCount" class="border border-slate-300 px-1 py-1">
+                                                    <TextInput v-if="isEditable" v-model="ratingRow(row.commitment.id).rating_q3_actual" type="number" step="any" class="w-16 text-xs" />
+                                                    <span v-else class="block text-center text-slate-700">{{ ratingRow(row.commitment.id).rating_q3_actual ?? '—' }}</span>
                                                 </td>
-                                                <td :rowspan="indicatorLines(c).length" class="border border-slate-300 px-1 py-1">
-                                                    <TextInput v-if="isEditable" v-model="ratingRow(c.id).rating_q4_target" type="number" step="any" class="w-20 text-xs" />
-                                                    <span v-else class="block text-center text-slate-700">{{ ratingRow(c.id).rating_q4_target ?? '—' }}</span>
+                                                <td :rowspan="row.lineCount" class="border border-slate-300 px-1 py-1">
+                                                    <TextInput v-if="isEditable" v-model="ratingRow(row.commitment.id).rating_q4_target" type="number" step="any" class="w-16 text-xs" />
+                                                    <span v-else class="block text-center text-slate-700">{{ ratingRow(row.commitment.id).rating_q4_target ?? '—' }}</span>
                                                 </td>
-                                                <td :rowspan="indicatorLines(c).length" class="border border-slate-300 px-1 py-1">
-                                                    <TextInput v-if="isEditable" v-model="ratingRow(c.id).rating_q4_actual" type="number" step="any" class="w-20 text-xs" />
-                                                    <span v-else class="block text-center text-slate-700">{{ ratingRow(c.id).rating_q4_actual ?? '—' }}</span>
+                                                <td :rowspan="row.lineCount" class="border border-slate-300 px-1 py-1">
+                                                    <TextInput v-if="isEditable" v-model="ratingRow(row.commitment.id).rating_q4_actual" type="number" step="any" class="w-16 text-xs" />
+                                                    <span v-else class="block text-center text-slate-700">{{ ratingRow(row.commitment.id).rating_q4_actual ?? '—' }}</span>
                                                 </td>
-                                                <td :rowspan="indicatorLines(c).length" class="border border-slate-300 px-2 py-1 text-center text-slate-700">
-                                                    {{ rowPreview(c, ratingRow(c.id)).targetTotal.toFixed(0) }}
+                                                <td :rowspan="row.lineCount" class="border border-slate-300 px-2 py-1 text-center text-slate-700">
+                                                    {{ rowPreview(row.commitment, ratingRow(row.commitment.id)).targetTotal.toFixed(0) }}
                                                 </td>
-                                                <td :rowspan="indicatorLines(c).length" class="border border-slate-300 px-2 py-1 text-center text-slate-700">
-                                                    {{ rowPreview(c, ratingRow(c.id)).actualTotal.toFixed(0) }}
+                                                <td :rowspan="row.lineCount" class="border border-slate-300 px-2 py-1 text-center text-slate-700">
+                                                    {{ rowPreview(row.commitment, ratingRow(row.commitment.id)).actualTotal.toFixed(0) }}
                                                 </td>
-                                                <td :rowspan="indicatorLines(c).length" class="border border-slate-300 px-2 py-1 text-center text-slate-700">
-                                                    {{ (rowPreview(c, ratingRow(c.id)).percent * 100).toFixed(0) }}%
+                                                <td :rowspan="row.lineCount" class="border border-slate-300 px-2 py-1 text-center text-slate-700">
+                                                    {{ (rowPreview(row.commitment, ratingRow(row.commitment.id)).percent * 100).toFixed(0) }}%
                                                 </td>
-                                                <td :rowspan="indicatorLines(c).length" class="border border-slate-300 px-2 py-1 text-center text-slate-700">
-                                                    {{ rowPreview(c, ratingRow(c.id)).q }}
+                                                <td :rowspan="row.lineCount" class="border border-slate-300 px-2 py-1 text-center font-semibold text-slate-800">
+                                                    {{ rowPreview(row.commitment, ratingRow(row.commitment.id)).q }}
                                                 </td>
-                                                <td :rowspan="indicatorLines(c).length" class="border border-slate-300 px-1 py-1">
-                                                    <TextInput v-if="isEditable" v-model="ratingRow(c.id).rating_efficiency" type="number" min="1" max="5" class="w-14 text-xs" />
-                                                    <span v-else class="block text-center text-slate-700">{{ ratingRow(c.id).rating_efficiency ?? '—' }}</span>
+                                                <td :rowspan="row.lineCount" class="border border-slate-300 px-1 py-1">
+                                                    <TextInput v-if="isEditable" v-model="ratingRow(row.commitment.id).rating_efficiency" type="number" min="1" max="5" class="w-14 text-xs" />
+                                                    <span v-else class="block text-center text-slate-700">{{ ratingRow(row.commitment.id).rating_efficiency ?? '—' }}</span>
                                                 </td>
-                                                <td :rowspan="indicatorLines(c).length" class="border border-slate-300 px-1 py-1">
-                                                    <TextInput v-if="isEditable" v-model="ratingRow(c.id).rating_timeliness" type="number" min="1" max="5" class="w-14 text-xs" />
-                                                    <span v-else class="block text-center text-slate-700">{{ ratingRow(c.id).rating_timeliness ?? '—' }}</span>
+                                                <td :rowspan="row.lineCount" class="border border-slate-300 px-1 py-1">
+                                                    <TextInput v-if="isEditable" v-model="ratingRow(row.commitment.id).rating_timeliness" type="number" min="1" max="5" class="w-14 text-xs" />
+                                                    <span v-else class="block text-center text-slate-700">{{ ratingRow(row.commitment.id).rating_timeliness ?? '—' }}</span>
                                                 </td>
-                                                <td :rowspan="indicatorLines(c).length" class="border border-slate-300 px-2 py-1 text-center font-semibold text-slate-800">
-                                                    {{ rowPreview(c, ratingRow(c.id)).avg != null ? rowPreview(c, ratingRow(c.id)).avg.toFixed(2) : '—' }}
+                                                <td :rowspan="row.lineCount" class="border border-slate-300 px-2 py-1 text-center font-semibold text-slate-800">
+                                                    {{ rowPreview(row.commitment, ratingRow(row.commitment.id)).avg != null ? rowPreview(row.commitment, ratingRow(row.commitment.id)).avg.toFixed(2) : '—' }}
                                                 </td>
-                                                <td :rowspan="indicatorLines(c).length" class="border border-slate-300 px-1 py-1">
-                                                    <TextInput v-if="isEditable" v-model="ratingRow(c.id).remarks" type="text" class="w-32 text-xs" />
-                                                    <span v-else class="block text-slate-700">{{ ratingRow(c.id).remarks || '—' }}</span>
+                                                <td :rowspan="row.lineCount" class="border border-slate-300 px-1 py-1">
+                                                    <TextInput v-if="isEditable" v-model="ratingRow(row.commitment.id).remarks" type="text" class="w-32 text-xs" />
+                                                    <span v-else class="block text-slate-700">{{ ratingRow(row.commitment.id).remarks || '—' }}</span>
                                                 </td>
                                             </template>
-                                        </tr>
-                                        <tr v-if="c.accomplishments?.length" class="bg-slate-50/80">
-                                            <td colspan="17" class="border border-slate-300 px-2 py-1 text-[11px] text-slate-600">
-                                                <span class="font-semibold text-slate-700">Evidence:</span>
-                                                <span v-for="(ev, i) in c.accomplishments" :key="ev.id" class="ml-1">
-                                                    <span class="font-medium text-slate-800">{{ ev.title }}</span>
-                                                    <span v-if="ev.description"> — {{ ev.description }}</span>
-                                                    <a
-                                                        v-if="ev.file_url"
-                                                        :href="ev.file_url"
-                                                        target="_blank"
-                                                        rel="noopener noreferrer"
-                                                        class="ml-1 font-semibold text-blue-700 hover:underline"
-                                                    >
-                                                        [file]
-                                                    </a>
-                                                    <span v-if="i < c.accomplishments.length - 1">;</span>
-                                                </span>
-                                            </td>
                                         </tr>
                                     </template>
                                 </template>
@@ -344,14 +412,18 @@ function badge(status) {
                     <InputError class="mt-2" :message="reviewForm.errors.commitments" />
                 </div>
 
-                <div v-if="isEditable" class="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+                <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+                    <EvidencePanel :items="packageEvidence" :show-form="false" />
+                </div>
+
+                <div v-if="isEditable" class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
                     <p class="text-sm font-semibold text-slate-800">Decision</p>
                     <p class="mt-1 text-xs text-slate-500">Approve after completing each row, or return with actionable comments (min. 20 characters).</p>
 
                     <div class="mt-3 flex gap-2">
                         <button
                             type="button"
-                            class="flex-1 rounded-md border px-3 py-2 text-sm font-semibold"
+                            class="flex-1 rounded-xl border px-3 py-2.5 text-sm font-semibold transition"
                             :class="reviewForm.action === 'approve' ? 'border-blue-600 bg-blue-50 text-blue-800' : 'border-slate-200'"
                             @click="reviewForm.action = 'approve'"
                         >
@@ -359,7 +431,7 @@ function badge(status) {
                         </button>
                         <button
                             type="button"
-                            class="flex-1 rounded-md border px-3 py-2 text-sm font-semibold"
+                            class="flex-1 rounded-xl border px-3 py-2.5 text-sm font-semibold transition"
                             :class="reviewForm.action === 'return' ? 'border-amber-500 bg-amber-50 text-amber-900' : 'border-slate-200'"
                             @click="reviewForm.action = 'return'"
                         >
@@ -372,7 +444,7 @@ function badge(status) {
                         <textarea
                             v-model="reviewForm.supervisor_feedback"
                             rows="4"
-                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                            class="mt-1 block w-full rounded-xl border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
                             :placeholder="reviewForm.action === 'return'
                                 ? 'Explain what to fix (targets, evidence, weights, or narrative). Minimum 20 characters.'
                                 : 'Optional recognition or follow-up items.'"
@@ -388,13 +460,13 @@ function badge(status) {
                     </div>
                 </div>
 
-                <div v-else-if="submission.supervisor_feedback" class="rounded-xl border border-slate-200 bg-white p-6 shadow-sm text-sm">
+                <div v-else-if="submission.supervisor_feedback" class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm text-sm sm:p-5">
                     <p class="font-semibold text-slate-800">Supervisor feedback</p>
                     <p class="mt-1 whitespace-pre-line text-slate-600">{{ submission.supervisor_feedback }}</p>
                 </div>
 
                 <div class="grid gap-3 text-[11px] md:grid-cols-2">
-                    <div class="rounded border border-slate-200 bg-slate-50 p-3">
+                    <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
                         <p class="font-semibold text-slate-700">Rating scale</p>
                         <ul class="mt-1 list-disc pl-4 text-slate-600">
                             <li>5 — Outstanding (≥130%)</li>
@@ -404,7 +476,7 @@ function badge(status) {
                             <li>1 — Poor (≤50%)</li>
                         </ul>
                     </div>
-                    <div class="rounded border border-slate-200 bg-slate-50 p-3">
+                    <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
                         <p class="font-semibold text-slate-700">Legend</p>
                         <p class="mt-1 text-slate-600">
                             Q = Quality (auto), E = Efficiency, T = Timeliness. Average = (Q + E + T) ÷ 3.
@@ -416,3 +488,4 @@ function badge(status) {
         </div>
     </AuthenticatedLayout>
 </template>
+

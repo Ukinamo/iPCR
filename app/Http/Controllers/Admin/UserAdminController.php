@@ -21,7 +21,55 @@ class UserAdminController extends Controller
         return Inertia::render('Admin/Users/Index', [
             'users' => User::query()->orderBy('name')->get(),
             'supervisors' => $this->supervisors(),
+            'pendingCount' => User::query()->where('account_status', AccountStatus::Pending)->count(),
         ]);
+    }
+
+    public function pending(): Response
+    {
+        return Inertia::render('Admin/Users/Pending', [
+            'pendingUsers' => User::query()
+                ->where('account_status', AccountStatus::Pending)
+                ->orderBy('created_at')
+                ->get(),
+            'supervisors' => $this->supervisors(),
+        ]);
+    }
+
+    public function approve(Request $request, User $user): RedirectResponse
+    {
+        abort_if($user->account_status !== AccountStatus::Pending, 404);
+        abort_if($user->role !== UserRole::Employee, 404);
+
+        $data = $request->validate([
+            'supervisor_id' => [
+                'required',
+                Rule::exists('users', 'id')->where(fn ($q) => $q->where('role', UserRole::Supervisor)),
+            ],
+        ]);
+
+        $user->update([
+            'account_status' => AccountStatus::Active,
+            'supervisor_id' => $data['supervisor_id'],
+        ]);
+
+        AuditLogger::log($request->user()->id, 'user.registration.approved', $user, null, $request);
+
+        return to_route('admin.users.pending')->with('status', 'Registration approved. The employee can now sign in.');
+    }
+
+    public function reject(Request $request, User $user): RedirectResponse
+    {
+        abort_if($user->account_status !== AccountStatus::Pending, 404);
+
+        AuditLogger::log($request->user()->id, 'user.registration.rejected', null, [
+            'rejected_user_id' => $user->id,
+            'rejected_email' => $user->email,
+        ], $request);
+
+        $user->delete();
+
+        return to_route('admin.users.pending')->with('status', 'Registration rejected and removed.');
     }
 
     public function create(): Response

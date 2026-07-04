@@ -18,7 +18,9 @@ function roleBadge(role) {
 }
 
 function statusBadge(status) {
-    return status === 'active' ? 'bg-emerald-50 text-emerald-800 ring-emerald-100' : 'bg-slate-100 text-slate-700 ring-slate-200';
+    if (status === 'active') return 'bg-emerald-50 text-emerald-800 ring-emerald-100';
+    if (status === 'pending') return 'bg-amber-50 text-amber-900 ring-amber-100';
+    return 'bg-slate-100 text-slate-700 ring-slate-200';
 }
 
 function destroyUser(id) {
@@ -58,6 +60,18 @@ function destroyUser(id) {
                         <p class="text-sm text-slate-600">Employees</p>
                         <p class="mt-2 text-3xl font-bold">{{ stats.employees }}</p>
                     </div>
+                    <div class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+                        <p class="text-sm text-slate-600">Pending Registrations</p>
+                        <p class="mt-2 text-3xl font-bold">{{ stats.pendingRegistrations }}</p>
+                    </div>
+                </div>
+
+                <div v-if="stats.pendingRegistrations > 0" class="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
+                    <span class="font-semibold">{{ stats.pendingRegistrations }} registration(s)</span>
+                    waiting for supervisor assignment.
+                    <Link :href="route('admin.users.pending')" class="ml-1 font-semibold text-amber-900 underline hover:text-amber-950">
+                        Review now
+                    </Link>
                 </div>
 
                 <div class="flex gap-2 rounded-lg bg-amber-50/60 p-1 text-sm font-semibold text-slate-700">

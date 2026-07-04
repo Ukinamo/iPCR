@@ -79,4 +79,9 @@ class User extends Authenticatable
     {
         return $this->account_status === AccountStatus::Active;
     }
+
+    public function isPending(): bool
+    {
+        return $this->account_status === AccountStatus::Pending;
+    }
 }

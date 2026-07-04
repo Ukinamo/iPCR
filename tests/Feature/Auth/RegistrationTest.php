@@ -2,6 +2,9 @@
 
 namespace Tests\Feature\Auth;
 
+use App\Enums\AccountStatus;
+use App\Enums\UserRole;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -25,7 +28,32 @@ class RegistrationTest extends TestCase
             'password_confirmation' => 'password',
         ]);
 
-        $this->assertAuthenticated();
-        $response->assertRedirect(route('dashboard', absolute: false));
+        $this->assertGuest();
+        $response->assertRedirect(route('login'));
+        $response->assertSessionHas('status');
+
+        $this->assertDatabaseHas('users', [
+            'email' => 'test@example.com',
+            'role' => UserRole::Employee->value,
+            'account_status' => AccountStatus::Pending->value,
+            'supervisor_id' => null,
+        ]);
+    }
+
+    public function test_pending_users_cannot_log_in(): void
+    {
+        User::factory()->create([
+            'email' => 'pending@example.com',
+            'password' => 'password',
+            'account_status' => AccountStatus::Pending,
+        ]);
+
+        $response = $this->post('/login', [
+            'email' => 'pending@example.com',
+            'password' => 'password',
+        ]);
+
+        $this->assertGuest();
+        $response->assertSessionHasErrors('email');
     }
 }

@@ -1,12 +1,13 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import EvidencePanel from '@/Components/EvidencePanel.vue';
 import InputError from '@/Components/InputError.vue';
 import InputLabel from '@/Components/InputLabel.vue';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
 import SecondaryButton from '@/Components/SecondaryButton.vue';
 import TextInput from '@/Components/TextInput.vue';
 import { Head, useForm, router } from '@inertiajs/vue3';
-import { computed, reactive, ref } from 'vue';
+import { computed, ref } from 'vue';
 
 const props = defineProps({
     stats: Object,
@@ -16,6 +17,14 @@ const props = defineProps({
     submission: Object,
     weightSummary: Object,
     canSubmitPeriod: Boolean,
+    canAddCommitment: {
+        type: Boolean,
+        default: true,
+    },
+    addCommitmentBlockedReason: {
+        type: String,
+        default: null,
+    },
     submitSteps: {
         type: Array,
         default: () => [],
@@ -34,6 +43,11 @@ const commitmentForm = useForm({
     evaluation_quarter: props.period.quarter,
     period_label: props.period.label,
     entries: [],
+    evidence: {
+        title: '',
+        description: '',
+        files: [],
+    },
 });
 
 let itemSeq = 0;
@@ -55,21 +69,7 @@ function newEntry(functionType, defaultWeight) {
         function_type: functionType,
         title: '',
         items: [newItem(defaultWeight)],
-        evidence: {
-            title: '',
-            description: '',
-            files: [],
-        },
     };
-}
-
-function setEntryEvidenceFiles(entry, event) {
-    const fl = event.target.files;
-    entry.evidence.files = fl && fl.length ? Array.from(fl) : [];
-}
-
-function removeEntryEvidenceFile(entry, index) {
-    entry.evidence.files.splice(index, 1);
 }
 
 function addItemRow(entryIdx) {
@@ -110,7 +110,7 @@ function addFunctionEntry(type) {
     const insertAt = last === -1
         ? commitmentForm.entries.length
         : commitmentForm.entries.length - last;
-    commitmentForm.entries.splice(insertAt, 0, newEntry(type, sectionRemaining(type)));
+    commitmentForm.entries.splice(insertAt, 0, newEntry(type, 0));
 }
 
 function removeFunctionEntry(eIdx) {
@@ -194,6 +194,9 @@ const strategicEntries = computed(() =>
 );
 
 function openCreateCommitmentPanel() {
+    if (!props.canAddCommitment) {
+        return;
+    }
     showCreateCommitmentPanel.value = true;
     tab.value = 'commitments';
     if (!commitmentForm.entries.length) {
@@ -211,9 +214,10 @@ function resetCommitmentCreateForm() {
     commitmentForm.evaluation_year = props.period.year;
     commitmentForm.evaluation_quarter = props.period.quarter;
     commitmentForm.period_label = props.period.label;
+    commitmentForm.evidence = { title: '', description: '', files: [] };
     commitmentForm.entries = [
-        newEntry('core', 60),
-        newEntry('strategic', 40),
+        newEntry('core', 0),
+        newEntry('strategic', 0),
     ];
 }
 
@@ -221,22 +225,14 @@ function submitNewCommitment() {
     const payload = commitmentForm.entries
         .filter((e) => e.enabled)
         .flatMap((e) =>
-            (e.items || []).map((it, idx) => {
-                const row = {
-                    function_type: e.function_type,
-                    title: e.title,
-                    description: it.description,
-                    weight: it.weight,
-                    annual_office_target: it.annual_office_target,
-                    individual_annual_targets: it.individual_annual_targets,
-                };
-                if (idx === 0) {
-                    row.evidence_title = e.evidence?.title ?? '';
-                    row.evidence_description = e.evidence?.description ?? '';
-                    row.evidence_files = e.evidence?.files ?? [];
-                }
-                return row;
-            }),
+            (e.items || []).map((it) => ({
+                function_type: e.function_type,
+                title: e.title,
+                description: it.description,
+                weight: it.weight,
+                annual_office_target: it.annual_office_target,
+                individual_annual_targets: it.individual_annual_targets,
+            })),
         );
 
     if (!payload.length) {
@@ -248,6 +244,9 @@ function submitNewCommitment() {
         evaluation_quarter: data.evaluation_quarter,
         period_label: data.period_label,
         entries: payload,
+        evidence_title: data.evidence?.title ?? '',
+        evidence_description: data.evidence?.description ?? '',
+        evidence_files: data.evidence?.files ?? [],
     }));
 
     commitmentForm.post(route('employee.commitments.store'), {
@@ -260,93 +259,12 @@ function submitNewCommitment() {
     });
 }
 
-const manageableCommitments = computed(() =>
-    (props.commitments || []).filter((c) => canManageEvidence(c.status)),
-);
-
-const evidenceDrafts = reactive({});
-const evidenceFileKeys = reactive({});
-const evidenceErrors = reactive({});
-const evidenceSubmitting = reactive({});
-
-function ensureEvidenceDraft(commitmentId) {
-    if (!evidenceDrafts[commitmentId]) {
-        evidenceDrafts[commitmentId] = { title: '', description: '', files: [] };
-    }
-    if (evidenceFileKeys[commitmentId] == null) {
-        evidenceFileKeys[commitmentId] = 0;
-    }
-    return evidenceDrafts[commitmentId];
-}
-
-function setEvidenceFiles(commitmentId, event) {
-    const draft = ensureEvidenceDraft(commitmentId);
-    const fl = event.target.files;
-    draft.files = fl && fl.length ? Array.from(fl) : [];
-}
-
-function removeEvidenceFile(commitmentId, index) {
-    const draft = ensureEvidenceDraft(commitmentId);
-    draft.files.splice(index, 1);
-}
-
-function submitEvidence(commitmentId) {
-    const draft = ensureEvidenceDraft(commitmentId);
-    if (!draft.files.length && !draft.title.trim()) {
-        evidenceErrors[commitmentId] = 'Attach at least one file, or provide a subject.';
-        return;
-    }
-    evidenceErrors[commitmentId] = '';
-
-    const fd = new FormData();
-    fd.append('commitment_id', String(commitmentId));
-    fd.append('title', draft.title ?? '');
-    fd.append('description', draft.description ?? '');
-    draft.files.forEach((f) => fd.append('files[]', f));
-
-    evidenceSubmitting[commitmentId] = true;
-    router.post(route('employee.accomplishments.store'), fd, {
-        forceFormData: true,
-        preserveScroll: true,
-        onSuccess: () => {
-            evidenceDrafts[commitmentId] = { title: '', description: '', files: [] };
-            evidenceFileKeys[commitmentId] = (evidenceFileKeys[commitmentId] || 0) + 1;
-            evidenceErrors[commitmentId] = '';
-        },
-        onError: (errors) => {
-            evidenceErrors[commitmentId] = errors.files || errors.title || errors.commitment_id || 'Upload failed.';
-        },
-        onFinish: () => {
-            evidenceSubmitting[commitmentId] = false;
-        },
-    });
-}
-
-function destroyEvidence(id) {
-    if (confirm('Remove this evidence entry?')) {
-        router.delete(route('employee.accomplishments.destroy', id), { preserveScroll: true });
-    }
-}
-
-function canManageEvidence(status) {
-    return status === 'draft' || status === 'returned';
-}
-
-function formatFileSize(bytes) {
-    if (bytes == null || bytes === '') return '';
-    const n = Number(bytes);
-    if (!Number.isFinite(n) || n <= 0) return '';
-    if (n < 1024) return `${n} B`;
-    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-    return `${(n / (1024 * 1024)).toFixed(1)} MB`;
-}
-
 const editId = ref(null);
 const editForm = useForm({
     title: '',
     description: '',
     function_type: 'core',
-    weight: 60,
+    weight: 0,
     annual_office_target: '',
     individual_annual_targets: '',
     period_label: props.period.label,
@@ -605,24 +523,49 @@ function indicatorLines(c) {
                         </div>
                     </div>
 
+                    <div
+                        v-if="!canAddCommitment && addCommitmentBlockedReason"
+                        class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950"
+                    >
+                        <p class="font-semibold text-amber-900">Adding commitments is paused</p>
+                        <p class="mt-1 text-amber-900/90">{{ addCommitmentBlockedReason }}</p>
+                    </div>
+
                     <div class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
                         <div>
                             <h4 class="text-sm font-semibold text-slate-900">Commitments</h4>
-                            <p class="mt-0.5 text-xs text-slate-500">Add a target and optional proof in one step.</p>
+                            <p class="mt-0.5 text-xs text-slate-500">
+                                <template v-if="canAddCommitment">Add a target and optional proof in one step.</template>
+                                <template v-else>Unavailable while your package is under review or this quarter is approved.</template>
+                            </p>
                         </div>
-                        <PrimaryButton type="button" class="shrink-0" @click="openCreateCommitmentPanel">+ Add commitment</PrimaryButton>
+                        <PrimaryButton
+                            v-if="canAddCommitment"
+                            type="button"
+                            class="shrink-0"
+                            @click="openCreateCommitmentPanel"
+                        >
+                            + Add commitment
+                        </PrimaryButton>
+                        <SecondaryButton
+                            v-else
+                            type="button"
+                            class="shrink-0 cursor-not-allowed opacity-60"
+                            disabled
+                        >
+                            + Add commitment
+                        </SecondaryButton>
                     </div>
 
                     <div
-                        v-if="showCreateCommitmentPanel"
+                        v-if="showCreateCommitmentPanel && canAddCommitment"
                         class="rounded-xl border-2 border-blue-200 bg-white p-6 shadow-lg ring-1 ring-blue-100"
                     >
                         <div class="flex flex-wrap items-start justify-between gap-3 border-b border-slate-100 pb-4">
                             <div>
                                 <h4 class="text-lg font-semibold text-slate-900">New commitment & evidence</h4>
                                 <p class="mt-1 text-xs text-slate-500">
-                                    Fill in the commitment first, then optionally attach what you already did (subject, notes, file). Everything saves in
-                                    one click.
+                                    Fill in your commitments like the IPCR form, then optionally attach up to 3 evidence files for the whole package in one step.
                                 </p>
                             </div>
                         </div>
@@ -906,95 +849,14 @@ function indicatorLines(c) {
                                 columns are filled by your supervisor during evaluation.
                             </p>
 
-                            <div class="rounded-lg border border-emerald-200 bg-emerald-50/50 p-4">
-                                <div class="flex flex-wrap items-center justify-between gap-2">
-                                    <div>
-                                        <h5 class="text-sm font-semibold text-emerald-950">Evidence (optional)</h5>
-                                        <p class="text-[11px] text-emerald-900/75">
-                                            One subject + one description per Function — attach <strong>one or many files</strong>. You can also add more
-                                            evidence later from the commitment card after saving.
-                                        </p>
-                                    </div>
-                                </div>
-
-                                <div class="mt-3 space-y-3">
-                                    <template v-for="(entry, eIdx) in commitmentForm.entries" :key="'ev-' + eIdx">
-                                        <div
-                                            v-if="entry.enabled"
-                                            class="rounded-md border border-slate-200 bg-white p-3"
-                                        >
-                                            <div class="flex flex-wrap items-center justify-between gap-2">
-                                                <p class="text-xs font-semibold text-slate-800">
-                                                    <span
-                                                        class="mr-2 inline-block rounded-full px-2 py-0.5 text-[10px] font-bold uppercase"
-                                                        :class="entry.function_type === 'core'
-                                                            ? 'bg-blue-100 text-blue-800'
-                                                            : 'bg-amber-100 text-amber-800'"
-                                                    >
-                                                        {{ entry.function_type }}
-                                                    </span>
-                                                    {{ entry.title || '(untitled function)' }}
-                                                </p>
-                                                <p v-if="entry.evidence.files.length" class="text-[11px] text-slate-500">
-                                                    {{ entry.evidence.files.length }} file(s) selected
-                                                </p>
-                                            </div>
-
-                                            <div class="mt-3 grid gap-3 md:grid-cols-2">
-                                                <div>
-                                                    <InputLabel :value="'Subject / title'" />
-                                                    <TextInput
-                                                        v-model="entry.evidence.title"
-                                                        type="text"
-                                                        class="mt-1 block w-full text-xs"
-                                                        placeholder="e.g. Q3 accomplishment report"
-                                                    />
-                                                </div>
-                                                <div>
-                                                    <InputLabel :value="'Description (optional)'" />
-                                                    <TextInput
-                                                        v-model="entry.evidence.description"
-                                                        type="text"
-                                                        class="mt-1 block w-full text-xs"
-                                                        placeholder="Short note about this evidence"
-                                                    />
-                                                </div>
-                                                <div class="md:col-span-2">
-                                                    <InputLabel :value="'Files (one or many)'" />
-                                                    <input
-                                                        type="file"
-                                                        multiple
-                                                        class="mt-1 block w-full text-xs text-slate-700 file:mr-3 file:rounded-md file:border-0 file:bg-blue-600 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-white hover:file:bg-blue-700"
-                                                        @change="(ev) => setEntryEvidenceFiles(entry, ev)"
-                                                    />
-                                                    <p class="mt-1 text-[10px] text-slate-500">
-                                                        jpg, png, gif, webp, pdf, doc, docx, xls, xlsx, txt, zip · up to 12 MB each, 20 files per function.
-                                                    </p>
-                                                    <ul v-if="entry.evidence.files.length" class="mt-2 space-y-1 text-[11px] text-slate-700">
-                                                        <li
-                                                            v-for="(f, i) in entry.evidence.files"
-                                                            :key="i"
-                                                            class="flex items-center justify-between gap-2 rounded border border-slate-200 bg-slate-50 px-2 py-1"
-                                                        >
-                                                            <span class="truncate">
-                                                                {{ f.name }}
-                                                                <span class="text-slate-400">· {{ formatFileSize(f.size) }}</span>
-                                                            </span>
-                                                            <button
-                                                                type="button"
-                                                                class="text-rose-700 hover:underline"
-                                                                @click="removeEntryEvidenceFile(entry, i)"
-                                                            >
-                                                                Remove
-                                                            </button>
-                                                        </li>
-                                                    </ul>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </template>
-                                </div>
-                            </div>
+                            <EvidencePanel
+                                embedded
+                                compact
+                                form-heading="Evidence (optional)"
+                                v-model:title="commitmentForm.evidence.title"
+                                v-model:description="commitmentForm.evidence.description"
+                                v-model:files="commitmentForm.evidence.files"
+                            />
 
                             <InputError class="mt-2" :message="commitmentForm.errors.entries" />
 
@@ -1018,10 +880,16 @@ function indicatorLines(c) {
                     </div>
 
                     <div
-                        v-if="!groupedCommitments.length"
+                        v-if="!groupedCommitments.length && canAddCommitment"
                         class="rounded-xl border border-dashed border-slate-300 bg-white/60 p-8 text-center text-sm text-slate-500"
                     >
                         No commitments for this quarter yet. Click <strong>+ Add commitment</strong> to get started.
+                    </div>
+                    <div
+                        v-else-if="!groupedCommitments.length"
+                        class="rounded-xl border border-dashed border-slate-300 bg-white/60 p-8 text-center text-sm text-slate-500"
+                    >
+                        No editable commitments for this quarter right now.
                     </div>
 
                     <div
@@ -1046,7 +914,13 @@ function indicatorLines(c) {
                                 · {{ g.functions.length }} function{{ g.functions.length === 1 ? '' : 's' }}
                                 · {{ g.items.length }} indicator{{ g.items.length === 1 ? '' : 's' }}
                                 · Σ Weight <strong>{{ g.total_weight.toFixed(2) }}%</strong>
-                                · {{ g.total_evidence }} evidence file{{ g.total_evidence === 1 ? '' : 's' }}
+                                <span
+                                    v-if="g.total_evidence"
+                                    class="ml-1 inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-800 ring-1 ring-emerald-100"
+                                >
+                                    📎 {{ g.total_evidence }} evidence file{{ g.total_evidence === 1 ? '' : 's' }}
+                                </span>
+                                <span v-else class="ml-1 text-slate-400">· no evidence yet</span>
                             </p>
                             <ul class="mt-3 space-y-1">
                                 <li

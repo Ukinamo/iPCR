@@ -9,7 +9,7 @@ use Symfony\Component\HttpFoundation\Response;
 class EnsureActiveAccount
 {
     /**
-     * @param  \Closure(\Illuminate\Http\Request): (\Symfony\Component\HttpFoundation\Response)  $next
+     * @param  Closure(Request): (Response)  $next
      */
     public function handle(Request $request, Closure $next): Response
     {
@@ -20,7 +20,11 @@ class EnsureActiveAccount
             $request->session()->invalidate();
             $request->session()->regenerateToken();
 
-            return redirect()->route('login')->with('status', 'Your account is inactive. Contact an administrator.');
+            $message = $user->isPending()
+                ? 'Your registration is pending administrator approval.'
+                : 'Your account is inactive. Contact an administrator.';
+
+            return redirect()->route('login')->with('status', $message);
         }
 
         return $next($request);

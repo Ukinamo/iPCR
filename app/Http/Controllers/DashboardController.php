@@ -8,6 +8,7 @@ use App\Enums\UserRole;
 use App\Models\Commitment;
 use App\Models\IpcrSubmission;
 use App\Models\User;
+use App\Services\CommitmentPeriodGuard;
 use App\Services\CommitmentWeightRules;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -72,6 +73,8 @@ class DashboardController extends Controller
             && $user->supervisor_id !== null;
 
         $packageLocked = $submission && in_array($submission->status, [SubmissionStatus::InReview, SubmissionStatus::Approved], true);
+        $addCommitmentBlockedReason = CommitmentPeriodGuard::addCommitmentBlockedReason($user, $year, $quarter);
+        $canAddCommitment = $addCommitmentBlockedReason === null;
         $submitSteps = $submission && $submission->status === SubmissionStatus::Approved
             ? []
             : $this->submitStepsForEmployee(
@@ -99,6 +102,8 @@ class DashboardController extends Controller
             'submission' => $submission,
             'weightSummary' => $weightSummary,
             'canSubmitPeriod' => $canSubmitPeriod,
+            'canAddCommitment' => $canAddCommitment,
+            'addCommitmentBlockedReason' => $addCommitmentBlockedReason,
             'submitSteps' => $submitSteps,
             'reminder' => 'The Q'.$quarter.' '.$year.' evaluation period closes on the last day of the quarter. Submit accomplishments and supporting documents before the deadline.',
         ]);
@@ -188,8 +193,9 @@ class DashboardController extends Controller
             ->get();
 
         $approved = $submissions->where('status', SubmissionStatus::Approved)->count();
+        $needsReview = $submissions->where('status', SubmissionStatus::InReview)->count();
         $pending = $submissions
-            ->filter(fn ($s) => in_array($s->status, [SubmissionStatus::Pending, SubmissionStatus::InReview], true))
+            ->filter(fn ($s) => in_array($s->status, [SubmissionStatus::Pending, SubmissionStatus::Returned], true))
             ->count();
 
         $avgRating = (float) IpcrSubmission::query()
@@ -202,7 +208,8 @@ class DashboardController extends Controller
             'stats' => [
                 'teamMembers' => $teamIds->count(),
                 'approved' => $approved,
-                'pendingReview' => $pending,
+                'pendingReview' => $needsReview,
+                'otherActive' => $pending,
                 'averageRating' => round($avgRating, 1),
             ],
             'submissions' => $submissions,
@@ -216,6 +223,7 @@ class DashboardController extends Controller
         $stats = [
             'totalUsers' => User::count(),
             'activeUsers' => User::where('account_status', 'active')->count(),
+            'pendingRegistrations' => User::where('account_status', 'pending')->count(),
             'supervisors' => User::where('role', UserRole::Supervisor)->count(),
             'employees' => User::where('role', UserRole::Employee)->count(),
         ];

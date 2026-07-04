@@ -19,6 +19,7 @@ Route::get('/portal', RolePortalController::class)->name('portal.role');
 
 Route::middleware(['auth', 'verified', 'active'])->group(function () {
     Route::get('/dashboard', DashboardController::class)->name('dashboard');
+    Route::get('accomplishments/{accomplishment}/file', [AccomplishmentController::class, 'file'])->name('accomplishments.file');
 
     Route::middleware('role:employee')->prefix('employee')->name('employee.')->group(function () {
         Route::post('commitments', [CommitmentController::class, 'store'])->name('commitments.store');
@@ -33,13 +34,19 @@ Route::middleware(['auth', 'verified', 'active'])->group(function () {
 
     Route::middleware('role:supervisor')->prefix('supervisor')->name('supervisor.')->group(function () {
         Route::get('submissions/{submission}', [SubmissionReviewController::class, 'show'])->name('submissions.show');
-        Route::get('submissions/{submission}/export', [SubmissionReviewController::class, 'export'])->name('submissions.export');
+        Route::get('submissions/{submission}/export/{format?}', [SubmissionReviewController::class, 'export'])
+            ->where('format', 'xlsx|csv|pdf')
+            ->name('submissions.export');
+        Route::get('submissions/{submission}/print', [SubmissionReviewController::class, 'print'])->name('submissions.print');
         Route::patch('submissions/{submission}', [SubmissionReviewController::class, 'update'])->name('submissions.update');
     });
 
     Route::middleware('role:administrator')->prefix('admin')->name('admin.')->group(function () {
         Route::get('users/{user}/ratings/export', [EmployeeRatingController::class, 'export'])->name('users.ratings.export');
         Route::get('users/{user}/ratings', [EmployeeRatingController::class, 'show'])->name('users.ratings');
+        Route::get('users/pending', [UserAdminController::class, 'pending'])->name('users.pending');
+        Route::patch('users/{user}/approve', [UserAdminController::class, 'approve'])->name('users.approve');
+        Route::delete('users/{user}/reject', [UserAdminController::class, 'reject'])->name('users.reject');
         Route::get('users', [UserAdminController::class, 'index'])->name('users.index');
         Route::get('users/create', [UserAdminController::class, 'create'])->name('users.create');
         Route::get('users/{user}/edit', [UserAdminController::class, 'edit'])->name('users.edit');

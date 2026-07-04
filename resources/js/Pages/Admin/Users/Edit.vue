@@ -75,6 +75,7 @@ function submit() {
                             <InputLabel for="account_status" value="Status" />
                             <select id="account_status" v-model="form.account_status" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
                                 <option value="active">Active</option>
+                                <option value="pending">Pending</option>
                                 <option value="inactive">Inactive</option>
                             </select>
                         </div>
