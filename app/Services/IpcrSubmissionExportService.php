@@ -3,9 +3,12 @@
 namespace App\Services;
 
 use App\Enums\SubmissionStatus;
+use App\Enums\UserRole;
 use App\Models\IpcrSubmission;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Support\Collection;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Csv;
 use PhpOffice\PhpSpreadsheet\Writer\Html;
@@ -18,11 +21,39 @@ final class IpcrSubmissionExportService
     public static function authorizeApprovedExport(Request $request, IpcrSubmission $submission): IpcrSubmission
     {
         abort_unless($submission->supervisor_id === $request->user()->id, 403);
+
+        return self::loadApprovedSubmission($submission);
+    }
+
+    public static function authorizeAdminExport(Request $request, IpcrSubmission $submission): IpcrSubmission
+    {
+        abort_unless($request->user()->role === UserRole::Administrator, 403);
+
+        return self::loadApprovedSubmission($submission);
+    }
+
+    private static function loadApprovedSubmission(IpcrSubmission $submission): IpcrSubmission
+    {
         abort_unless($submission->status === SubmissionStatus::Approved, 422);
 
         $submission->load(['employee', 'commitments', 'supervisor']);
 
         return $submission;
+    }
+
+    /**
+     * @param  Collection<int, IpcrSubmission>  $submissions
+     */
+    public static function spreadsheetForEmployee(Collection $submissions, User $employee): Spreadsheet
+    {
+        return IpcrApprovedFormExporter::exportToSpreadsheet($submissions, $employee);
+    }
+
+    public static function employeeHistoryFilename(User $employee, string $extension): string
+    {
+        $safeName = preg_replace('/[^a-zA-Z0-9_-]+/', '-', $employee->name) ?: 'employee';
+
+        return "ipcr-ratings-{$safeName}-{$employee->id}.{$extension}";
     }
 
     public static function spreadsheet(IpcrSubmission $submission): Spreadsheet
@@ -43,20 +74,59 @@ final class IpcrSubmissionExportService
 
     public static function download(IpcrSubmission $submission, string $format): StreamedResponse
     {
-        $spreadsheet = self::spreadsheet($submission);
+        return self::downloadSpreadsheet(self::spreadsheet($submission), self::filename($submission, self::extensionForFormat($format)), $format);
+    }
 
-        return match ($format) {
-            'csv' => self::streamCsv($spreadsheet, $submission),
-            'pdf' => self::streamPdf($spreadsheet, $submission, true),
-            default => self::streamXlsx($spreadsheet, $submission),
-        };
+    /**
+     * @param  Collection<int, IpcrSubmission>  $submissions
+     */
+    public static function downloadEmployeeHistory(Collection $submissions, User $employee, string $format): StreamedResponse
+    {
+        $spreadsheet = self::spreadsheetForEmployee($submissions, $employee);
+
+        return self::downloadSpreadsheet(
+            $spreadsheet,
+            self::employeeHistoryFilename($employee, self::extensionForFormat($format)),
+            $format,
+        );
     }
 
     public static function inlinePrint(IpcrSubmission $submission): Response
     {
-        return response(self::htmlForSinglePagePrint(self::spreadsheet($submission)), 200, [
+        return self::inlinePrintSpreadsheet(self::spreadsheet($submission));
+    }
+
+    /**
+     * @param  Collection<int, IpcrSubmission>  $submissions
+     */
+    public static function inlinePrintEmployeeHistory(Collection $submissions, User $employee): Response
+    {
+        return self::inlinePrintSpreadsheet(self::spreadsheetForEmployee($submissions, $employee));
+    }
+
+    public static function downloadSpreadsheet(Spreadsheet $spreadsheet, string $filename, string $format): StreamedResponse
+    {
+        return match ($format) {
+            'csv' => self::streamCsv($spreadsheet, $filename),
+            'pdf' => self::streamPdf($spreadsheet, $filename, true),
+            default => self::streamXlsx($spreadsheet, $filename),
+        };
+    }
+
+    public static function inlinePrintSpreadsheet(Spreadsheet $spreadsheet): Response
+    {
+        return response(self::htmlForSinglePagePrint($spreadsheet), 200, [
             'Content-Type' => 'text/html; charset=UTF-8',
         ]);
+    }
+
+    private static function extensionForFormat(string $format): string
+    {
+        return match ($format) {
+            'csv' => 'csv',
+            'pdf' => 'pdf',
+            default => 'xlsx',
+        };
     }
 
     private static function htmlForSinglePagePrint(Spreadsheet $spreadsheet): string
@@ -142,18 +212,18 @@ JS;
         return $html;
     }
 
-    private static function streamXlsx(Spreadsheet $spreadsheet, IpcrSubmission $submission): StreamedResponse
+    private static function streamXlsx(Spreadsheet $spreadsheet, string $filename): StreamedResponse
     {
         $writer = new Xlsx($spreadsheet);
 
         return response()->streamDownload(function () use ($writer): void {
             $writer->save('php://output');
-        }, self::filename($submission, 'xlsx'), [
+        }, $filename, [
             'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         ]);
     }
 
-    private static function streamCsv(Spreadsheet $spreadsheet, IpcrSubmission $submission): StreamedResponse
+    private static function streamCsv(Spreadsheet $spreadsheet, string $filename): StreamedResponse
     {
         $writer = new Csv($spreadsheet);
         $writer->setDelimiter(',');
@@ -164,15 +234,14 @@ JS;
 
         return response()->streamDownload(function () use ($writer): void {
             $writer->save('php://output');
-        }, self::filename($submission, 'csv'), [
+        }, $filename, [
             'Content-Type' => 'text/csv; charset=UTF-8',
         ]);
     }
 
-    private static function streamPdf(Spreadsheet $spreadsheet, IpcrSubmission $submission, bool $download): StreamedResponse
+    private static function streamPdf(Spreadsheet $spreadsheet, string $filename, bool $download): StreamedResponse
     {
         $writer = new MpdfWriter($spreadsheet);
-        $filename = self::filename($submission, 'pdf');
         $disposition = ($download ? 'attachment' : 'inline').'; filename="'.$filename.'"';
 
         return response()->stream(function () use ($writer): void {

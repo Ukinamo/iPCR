@@ -1,4 +1,5 @@
 <script setup>
+import AppIcon from '@/Components/AppIcon.vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import SecondaryButton from '@/Components/SecondaryButton.vue';
 import { Head, Link, router } from '@inertiajs/vue3';
@@ -36,23 +37,37 @@ function destroyUser(id) {
     <AuthenticatedLayout>
         <template #header>
             <div class="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                    <h2 class="text-xl font-semibold leading-tight text-gray-800">User Management</h2>
-                    <p class="text-sm text-gray-500">Create users and maintain roles in dedicated pages.</p>
+                <div class="flex items-start gap-3">
+                    <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
+                        <AppIcon name="users" class="h-5 w-5" />
+                    </span>
+                    <div>
+                        <h2 class="text-xl font-semibold leading-tight text-gray-800">User Management</h2>
+                        <p class="text-sm text-gray-500">Create users and maintain roles in dedicated pages.</p>
+                    </div>
                 </div>
-                <div class="flex gap-2">
+                <div class="flex flex-wrap gap-2">
                     <Link
                         v-if="pendingCount > 0"
                         :href="route('admin.users.pending')"
                         class="inline-flex items-center gap-2 rounded-md bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700"
                     >
+                        <AppIcon name="clock" class="h-4 w-4" />
                         Pending registrations
                         <span class="rounded-full bg-white/20 px-2 py-0.5 text-xs">{{ pendingCount }}</span>
                     </Link>
-                    <Link :href="route('admin.users.create')" class="inline-flex rounded-md bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700">
-                        + Create user
+                    <Link
+                        :href="route('admin.users.create')"
+                        class="inline-flex items-center gap-2 rounded-md bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700"
+                    >
+                        <AppIcon name="plus" class="h-4 w-4" />
+                        Create user
                     </Link>
-                    <Link :href="route('dashboard')" class="inline-flex rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+                    <Link
+                        :href="route('dashboard')"
+                        class="inline-flex items-center gap-2 rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                    >
+                        <AppIcon name="arrow-left" class="h-4 w-4" />
                         Back dashboard
                     </Link>
                 </div>
@@ -73,7 +88,7 @@ function destroyUser(id) {
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-slate-100">
-                            <tr v-for="u in users" :key="u.id">
+                            <tr v-for="u in users" :key="u.id" class="hover:bg-slate-50/60">
                                 <td class="px-4 py-3 font-medium text-slate-900">{{ u.name }}</td>
                                 <td class="px-4 py-3 text-slate-600">{{ u.email }}</td>
                                 <td class="px-4 py-3">
@@ -84,13 +99,25 @@ function destroyUser(id) {
                                 </td>
                                 <td class="px-4 py-3 text-right">
                                     <div class="flex flex-wrap justify-end gap-2">
-                                        <Link v-if="u.role === 'employee'" :href="route('admin.users.ratings', u.id)" class="inline-flex items-center rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-800 shadow-sm hover:bg-slate-50">
+                                        <Link
+                                            v-if="u.role === 'employee'"
+                                            :href="route('admin.users.ratings', u.id)"
+                                            class="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-800 shadow-sm hover:bg-slate-50"
+                                        >
+                                            <AppIcon name="star" class="h-3.5 w-3.5 text-amber-600" />
                                             Ratings
                                         </Link>
-                                        <Link :href="route('admin.users.edit', u.id)" class="inline-flex items-center rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-800 shadow-sm hover:bg-slate-50">
+                                        <Link
+                                            :href="route('admin.users.edit', u.id)"
+                                            class="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-800 shadow-sm hover:bg-slate-50"
+                                        >
+                                            <AppIcon name="pencil" class="h-3.5 w-3.5" />
                                             Edit
                                         </Link>
-                                        <SecondaryButton class="text-rose-700 ring-rose-200" @click="destroyUser(u.id)">Delete</SecondaryButton>
+                                        <SecondaryButton class="inline-flex items-center gap-1.5 text-rose-700 ring-rose-200" @click="destroyUser(u.id)">
+                                            <AppIcon name="trash" class="h-3.5 w-3.5" />
+                                            Delete
+                                        </SecondaryButton>
                                     </div>
                                 </td>
                             </tr>

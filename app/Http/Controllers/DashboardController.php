@@ -7,7 +7,9 @@ use App\Enums\SubmissionStatus;
 use App\Enums\UserRole;
 use App\Models\Commitment;
 use App\Models\IpcrSubmission;
+use App\Http\Controllers\Admin\ReportController;
 use App\Models\User;
+use App\Services\AdminAnalyticsService;
 use App\Services\CommitmentPeriodGuard;
 use App\Services\CommitmentWeightRules;
 use Illuminate\Http\RedirectResponse;
@@ -231,6 +233,9 @@ class DashboardController extends Controller
         return Inertia::render('Admin/Dashboard', [
             'stats' => $stats,
             'users' => $users,
+            'approvedRatings' => app(ReportController::class)->approvedSubmissionsList(),
+            'reviewMonths' => app(ReportController::class)->approvedReviewMonths(),
+            'analytics' => app(AdminAnalyticsService::class)->snapshot(),
             'supervisors' => User::query()
                 ->where('role', UserRole::Supervisor)
                 ->orderBy('name')

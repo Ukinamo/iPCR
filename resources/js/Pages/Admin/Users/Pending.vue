@@ -1,4 +1,5 @@
 <script setup>
+import AppIcon from '@/Components/AppIcon.vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import InputLabel from '@/Components/InputLabel.vue';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
@@ -48,15 +49,22 @@ function formatDate(value) {
     <AuthenticatedLayout>
         <template #header>
             <div class="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                    <h2 class="text-xl font-semibold leading-tight text-gray-800">Pending Registrations</h2>
-                    <p class="text-sm text-gray-500">Review new employee sign-ups and assign a supervisor before activating their account.</p>
+                <div class="flex items-start gap-3">
+                    <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-amber-100 text-amber-700">
+                        <AppIcon name="clock" class="h-5 w-5" />
+                    </span>
+                    <div>
+                        <h2 class="text-xl font-semibold leading-tight text-gray-800">Pending Registrations</h2>
+                        <p class="text-sm text-gray-500">Review new employee sign-ups and assign a supervisor before activating their account.</p>
+                    </div>
                 </div>
                 <div class="flex gap-2">
-                    <Link :href="route('admin.users.index')" class="inline-flex rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+                    <Link :href="route('admin.users.index')" class="inline-flex items-center gap-2 rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+                        <AppIcon name="users" class="h-4 w-4" />
                         All users
                     </Link>
-                    <Link :href="route('dashboard')" class="inline-flex rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+                    <Link :href="route('dashboard')" class="inline-flex items-center gap-2 rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+                        <AppIcon name="arrow-left" class="h-4 w-4" />
                         Back dashboard
                     </Link>
                 </div>

@@ -1,46 +1,15 @@
 <script setup>
+import AppIcon from '@/Components/AppIcon.vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import IpcrApprovedSubmissionPanel from '@/Components/IpcrApprovedSubmissionPanel.vue';
+import IpcrExportDropdown from '@/Components/IpcrExportDropdown.vue';
 import SecondaryButton from '@/Components/SecondaryButton.vue';
-import { formatWholeNumber } from '@/utils/numberFormat';
 import { Head, Link } from '@inertiajs/vue3';
 
 defineProps({
     employee: Object,
     submissions: Array,
 });
-
-function period(s) {
-    return `Q${s.evaluation_quarter} ${s.evaluation_year}`;
-}
-
-function submissionTotals(submission) {
-    const rows = submission?.commitments || [];
-    const weight = rows.reduce((sum, c) => sum + Number(c.weight || 0), 0);
-    const average = rows.reduce((sum, c) => sum + Number(c.rating_average || 0), 0);
-    const weighted = rows.reduce((sum, c) => sum + Number(c.rating_weighted || 0), 0);
-    return {
-        weight: weight.toFixed(2),
-        average: average.toFixed(2),
-        weighted: weighted.toFixed(2),
-    };
-}
-
-function indicatorLines(c) {
-    const desc = (c?.description ?? '').trim();
-    if (!desc) return [c?.title ?? ''];
-    const lines = desc.split(/\r\n|\r|\n/).map(l => l.trim()).filter(Boolean);
-    return lines.length ? lines : [c?.title ?? ''];
-}
-
-function formatWeighted(c) {
-    if (c?.rating_weighted != null) {
-        return Number(c.rating_weighted).toFixed(2);
-    }
-    if (c?.rating_average != null && c?.weight != null) {
-        return (Number(c.rating_average) * (Number(c.weight) / 100)).toFixed(2);
-    }
-    return '—';
-}
 </script>
 
 <template>
@@ -49,26 +18,34 @@ function formatWeighted(c) {
     <AuthenticatedLayout>
         <template #header>
             <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                    <h2 class="text-xl font-semibold leading-tight text-gray-800">IPCR ratings</h2>
-                    <p class="text-sm text-gray-500">{{ employee.name }} · {{ employee.email }}</p>
+                <div class="flex items-start gap-3">
+                    <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-amber-100 text-amber-700">
+                        <AppIcon name="star" class="h-5 w-5" />
+                    </span>
+                    <div>
+                        <h2 class="text-xl font-semibold leading-tight text-gray-800">IPCR ratings</h2>
+                        <p class="text-sm text-gray-500">{{ employee.name }} · {{ employee.email }}</p>
+                    </div>
                 </div>
-                <div class="flex flex-wrap gap-2">
-                    <a
-                        :href="route('admin.users.ratings.export', employee.id)"
-                        class="inline-flex items-center rounded-md bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700"
-                    >
-                        Export to Excel
-                    </a>
-                    <Link :href="route('dashboard')">
-                        <SecondaryButton type="button">Back to dashboard</SecondaryButton>
+                <div class="flex flex-wrap items-center gap-2">
+                    <IpcrExportDropdown
+                        v-if="submissions?.length"
+                        mode="admin-employee"
+                        :user-id="employee.id"
+                        label="Export all"
+                    />
+                    <Link :href="route('dashboard')" class="inline-flex">
+                        <SecondaryButton type="button" class="inline-flex items-center gap-2">
+                            <AppIcon name="arrow-left" class="h-4 w-4" />
+                            Back to dashboard
+                        </SecondaryButton>
                     </Link>
                 </div>
             </div>
         </template>
 
-        <div class="py-8">
-            <div class="mx-auto max-w-6xl space-y-6 sm:px-6 lg:px-8">
+        <div class="py-6">
+            <div class="mx-auto w-full max-w-[100vw] space-y-6 px-3 sm:px-4 lg:px-8">
                 <p class="text-sm text-slate-600">
                     Remarks = Weight% × Average per row; TOTAL Remarks = sum of row Remarks (final average rating).
                 </p>
@@ -77,105 +54,11 @@ function formatWeighted(c) {
                     No approved IPCR packages yet for this employee.
                 </div>
 
-                <div v-for="s in submissions" :key="s.id" class="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-                    <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 bg-slate-50 px-4 py-3">
-                        <div>
-                            <p class="font-semibold text-slate-900">{{ period(s) }}</p>
-                            <p class="text-xs text-slate-500">
-                                Supervisor: {{ s.supervisor?.name ?? '—' }} · Reviewed {{ s.reviewed_at ? new Date(s.reviewed_at).toLocaleDateString() : '—' }}
-                            </p>
-                        </div>
-                        <p v-if="s.overall_rating != null" class="text-lg font-bold text-amber-800">Overall: {{ s.overall_rating }}</p>
-                    </div>
-                    <div class="overflow-x-auto">
-                        <table class="min-w-full border-collapse text-xs">
-                            <thead class="bg-slate-100 text-center font-semibold uppercase tracking-wide text-slate-600">
-                                <tr>
-                                    <th class="border border-slate-300 px-2 py-1" rowspan="3">Function</th>
-                                    <th class="border border-slate-300 px-2 py-1" rowspan="3">Services / Programs / Indicators</th>
-                                    <th class="border border-slate-300 px-2 py-1" rowspan="3">Weight</th>
-                                    <th class="border border-slate-300 px-2 py-1" rowspan="3">Annual Office Target</th>
-                                    <th class="border border-slate-300 px-2 py-1" rowspan="3">Individual Annual Targets</th>
-                                    <th class="border border-slate-300 px-2 py-1" colspan="7">Accomplishments</th>
-                                    <th class="border border-slate-300 px-2 py-1" colspan="4">Rating</th>
-                                    <th class="border border-slate-300 px-2 py-1" rowspan="3">Remarks</th>
-                                </tr>
-                                <tr>
-                                    <th class="border border-slate-300 px-2 py-1" colspan="2">Q3</th>
-                                    <th class="border border-slate-300 px-2 py-1" colspan="2">Q4</th>
-                                    <th class="border border-slate-300 px-2 py-1" colspan="3">Total</th>
-                                    <th class="border border-slate-300 px-2 py-1" rowspan="2">Q</th>
-                                    <th class="border border-slate-300 px-2 py-1" rowspan="2">E</th>
-                                    <th class="border border-slate-300 px-2 py-1" rowspan="2">T</th>
-                                    <th class="border border-slate-300 px-2 py-1" rowspan="2">Avg</th>
-                                </tr>
-                                <tr>
-                                    <th class="border border-slate-300 px-2 py-1">Target</th>
-                                    <th class="border border-slate-300 px-2 py-1">Actual</th>
-                                    <th class="border border-slate-300 px-2 py-1">Target</th>
-                                    <th class="border border-slate-300 px-2 py-1">Actual</th>
-                                    <th class="border border-slate-300 px-2 py-1">Target</th>
-                                    <th class="border border-slate-300 px-2 py-1">Actual</th>
-                                    <th class="border border-slate-300 px-2 py-1">%</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <template v-for="group in ['core', 'strategic']" :key="group">
-                                    <tr v-if="(s.commitments || []).some(c => c.function_type === group)" class="bg-slate-100 font-semibold">
-                                        <td class="border border-slate-300 px-2 py-1 uppercase text-slate-700" colspan="17">
-                                            {{ group === 'core' ? 'Core Functions' : 'Strategic Functions' }}
-                                            ({{ (s.commitments || []).filter(c => c.function_type === group).reduce((a, c) => a + Number(c.weight || 0), 0) }}%)
-                                        </td>
-                                    </tr>
-                                    <template v-for="c in (s.commitments || []).filter(c => c.function_type === group)" :key="c.id">
-                                        <tr
-                                            v-for="(line, li) in indicatorLines(c)"
-                                            :key="c.id + '-' + li"
-                                            class="align-top"
-                                        >
-                                            <td v-if="li === 0" :rowspan="indicatorLines(c).length" class="border border-slate-300 px-2 py-1 font-semibold text-slate-800">
-                                                {{ c.title }}
-                                            </td>
-                                            <td class="border border-slate-300 px-2 py-1 text-slate-700">
-                                                {{ line }}
-                                            </td>
-                                            <td v-if="li === 0" :rowspan="indicatorLines(c).length" class="border border-slate-300 px-2 py-1 text-center">{{ Number(c.weight) }}%</td>
-                                            <td v-if="li === 0" :rowspan="indicatorLines(c).length" class="border border-slate-300 px-2 py-1 text-center">{{ c.annual_office_target ?? '—' }}</td>
-                                            <td v-if="li === 0" :rowspan="indicatorLines(c).length" class="border border-slate-300 px-2 py-1 text-center">{{ c.individual_annual_targets ?? '—' }}</td>
-                                            <td v-if="li === 0" :rowspan="indicatorLines(c).length" class="border border-slate-300 px-2 py-1 text-center">{{ formatWholeNumber(c.rating_q3_target) }}</td>
-                                            <td v-if="li === 0" :rowspan="indicatorLines(c).length" class="border border-slate-300 px-2 py-1 text-center">{{ formatWholeNumber(c.rating_q3_actual) }}</td>
-                                            <td v-if="li === 0" :rowspan="indicatorLines(c).length" class="border border-slate-300 px-2 py-1 text-center">{{ formatWholeNumber(c.rating_q4_target) }}</td>
-                                            <td v-if="li === 0" :rowspan="indicatorLines(c).length" class="border border-slate-300 px-2 py-1 text-center">{{ formatWholeNumber(c.rating_q4_actual) }}</td>
-                                            <td v-if="li === 0" :rowspan="indicatorLines(c).length" class="border border-slate-300 px-2 py-1 text-center">{{ c.rating_target_total ?? '—' }}</td>
-                                            <td v-if="li === 0" :rowspan="indicatorLines(c).length" class="border border-slate-300 px-2 py-1 text-center">{{ c.rating_actual_total ?? '—' }}</td>
-                                            <td v-if="li === 0" :rowspan="indicatorLines(c).length" class="border border-slate-300 px-2 py-1 text-center">{{ c.rating_percent != null ? (Number(c.rating_percent) * 100).toFixed(0) + '%' : '—' }}</td>
-                                            <td v-if="li === 0" :rowspan="indicatorLines(c).length" class="border border-slate-300 px-2 py-1 text-center">{{ c.rating_quality ?? '—' }}</td>
-                                            <td v-if="li === 0" :rowspan="indicatorLines(c).length" class="border border-slate-300 px-2 py-1 text-center">{{ c.rating_efficiency ?? '—' }}</td>
-                                            <td v-if="li === 0" :rowspan="indicatorLines(c).length" class="border border-slate-300 px-2 py-1 text-center">{{ c.rating_timeliness ?? '—' }}</td>
-                                            <td v-if="li === 0" :rowspan="indicatorLines(c).length" class="border border-slate-300 px-2 py-1 text-center">{{ c.rating_average ?? '—' }}</td>
-                                            <td v-if="li === 0" :rowspan="indicatorLines(c).length" class="border border-slate-300 px-2 py-1 text-center">{{ formatWeighted(c) }}</td>
-                                        </tr>
-                                    </template>
-                                </template>
-                                <tr class="bg-slate-100 font-semibold">
-                                    <td class="border border-slate-300 px-2 py-1 text-right" colspan="2">TOTAL</td>
-                                    <td class="border border-slate-300 px-2 py-1 text-center">{{ submissionTotals(s).weight }}%</td>
-                                    <td class="border border-slate-300 px-2 py-1" colspan="2"></td>
-                                    <td class="border border-slate-300 px-2 py-1" colspan="7"></td>
-                                    <td class="border border-slate-300 px-2 py-1" colspan="3"></td>
-                                    <td class="border border-slate-300 px-2 py-1 text-center">{{ submissionTotals(s).average }}</td>
-                                    <td class="border border-slate-300 px-2 py-1 text-center text-amber-800">{{ submissionTotals(s).weighted }}</td>
-                                </tr>
-                                <tr class="bg-amber-50 font-semibold text-amber-900">
-                                    <td class="border border-slate-300 px-2 py-1 text-right" colspan="2">FINAL AVERAGE RATING</td>
-                                    <td class="border border-slate-300 px-2 py-1" colspan="15">
-                                        {{ s.overall_rating != null ? Number(s.overall_rating).toFixed(2) : '—' }}
-                                    </td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
+                <IpcrApprovedSubmissionPanel
+                    v-for="s in submissions"
+                    :key="s.id"
+                    :submission="s"
+                />
             </div>
         </div>
     </AuthenticatedLayout>

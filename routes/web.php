@@ -43,7 +43,14 @@ Route::middleware(['auth', 'verified', 'active'])->group(function () {
     });
 
     Route::middleware('role:administrator')->prefix('admin')->name('admin.')->group(function () {
-        Route::get('users/{user}/ratings/export', [EmployeeRatingController::class, 'export'])->name('users.ratings.export');
+        Route::get('submissions/{submission}/export/{format?}', [EmployeeRatingController::class, 'exportSubmission'])
+            ->where('format', 'xlsx|csv|pdf')
+            ->name('submissions.export');
+        Route::get('submissions/{submission}/print', [EmployeeRatingController::class, 'printSubmission'])->name('submissions.print');
+        Route::get('users/{user}/ratings/export/{format?}', [EmployeeRatingController::class, 'export'])
+            ->where('format', 'xlsx|csv|pdf')
+            ->name('users.ratings.export');
+        Route::get('users/{user}/ratings/print', [EmployeeRatingController::class, 'print'])->name('users.ratings.print');
         Route::get('users/{user}/ratings', [EmployeeRatingController::class, 'show'])->name('users.ratings');
         Route::get('users/pending', [UserAdminController::class, 'pending'])->name('users.pending');
         Route::patch('users/{user}/approve', [UserAdminController::class, 'approve'])->name('users.approve');
@@ -54,6 +61,8 @@ Route::middleware(['auth', 'verified', 'active'])->group(function () {
         Route::post('users', [UserAdminController::class, 'store'])->name('users.store');
         Route::patch('users/{user}', [UserAdminController::class, 'update'])->name('users.update');
         Route::delete('users/{user}', [UserAdminController::class, 'destroy'])->name('users.destroy');
+        Route::get('reports/ratings', [ReportController::class, 'ratings'])->name('reports.ratings');
+        Route::get('reports/submissions/{submission}', [ReportController::class, 'showSubmission'])->name('reports.submissions.show');
         Route::get('reports/users.csv', [ReportController::class, 'usersCsv'])->name('reports.users');
     });
 
