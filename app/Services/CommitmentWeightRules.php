@@ -20,14 +20,25 @@ final class CommitmentWeightRules
      */
     public static function totalsForEditablePeriod(int $userId, int $year, int $quarter, ?int $excludeCommitmentId = null): array
     {
+        $exclude = $excludeCommitmentId !== null ? [$excludeCommitmentId] : [];
+
+        return self::totalsExcludingCommitmentIds($userId, $year, $quarter, $exclude);
+    }
+
+    /**
+     * @param  list<int>  $excludeCommitmentIds
+     * @return array{core: float, strategic: float, total: float}
+     */
+    public static function totalsExcludingCommitmentIds(int $userId, int $year, int $quarter, array $excludeCommitmentIds = []): array
+    {
         $q = Commitment::query()
             ->where('user_id', $userId)
             ->where('evaluation_year', $year)
             ->where('evaluation_quarter', $quarter)
             ->whereIn('status', [CommitmentStatus::Draft, CommitmentStatus::Returned]);
 
-        if ($excludeCommitmentId !== null) {
-            $q->whereKeyNot($excludeCommitmentId);
+        if ($excludeCommitmentIds !== []) {
+            $q->whereNotIn('id', $excludeCommitmentIds);
         }
 
         return self::totalsFromCollection($q->get());

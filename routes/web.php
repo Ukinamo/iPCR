@@ -25,6 +25,7 @@ Route::middleware(['auth', 'verified', 'active'])->group(function () {
         Route::post('commitments', [CommitmentController::class, 'store'])->name('commitments.store');
         Route::get('commitments/{commitment}', [CommitmentController::class, 'show'])->name('commitments.show');
         Route::patch('commitments/{commitment}', [CommitmentController::class, 'update'])->name('commitments.update');
+        Route::patch('commitments/{commitment}/package', [CommitmentController::class, 'updateBatch'])->name('commitments.updateBatch');
         Route::delete('commitments/{commitment}', [CommitmentController::class, 'destroy'])->name('commitments.destroy');
         Route::post('accomplishments', [AccomplishmentController::class, 'store'])->name('accomplishments.store');
         Route::delete('accomplishments/{accomplishment}', [AccomplishmentController::class, 'destroy'])->name('accomplishments.destroy');

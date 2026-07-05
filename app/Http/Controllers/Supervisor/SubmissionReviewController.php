@@ -62,13 +62,13 @@ class SubmissionReviewController extends Controller
             $data = array_merge($base, $request->validate([
                 'commitments' => ['required', 'array', 'min:1'],
                 'commitments.*.id' => ['required', 'integer'],
+                'commitments.*.rating_quality' => ['required', 'integer', 'min:1', 'max:5'],
                 'commitments.*.rating_efficiency' => ['required', 'integer', 'min:1', 'max:5'],
                 'commitments.*.rating_timeliness' => ['required', 'integer', 'min:1', 'max:5'],
-                'commitments.*.rating_q3_target' => ['required', 'numeric', 'min:0'],
-                'commitments.*.rating_q3_actual' => ['required', 'numeric', 'min:0'],
-                'commitments.*.rating_q4_target' => ['required', 'numeric', 'min:0'],
-                'commitments.*.rating_q4_actual' => ['required', 'numeric', 'min:0'],
-                'commitments.*.remarks' => ['nullable', 'string', 'max:255'],
+                'commitments.*.rating_q3_target' => ['nullable', 'numeric', 'min:0'],
+                'commitments.*.rating_q3_actual' => ['nullable', 'numeric', 'min:0'],
+                'commitments.*.rating_q4_target' => ['nullable', 'numeric', 'min:0'],
+                'commitments.*.rating_q4_actual' => ['nullable', 'numeric', 'min:0'],
             ]));
         } else {
             $data = $base;
@@ -101,58 +101,44 @@ class SubmissionReviewController extends Controller
                 ]);
             }
 
-            foreach ($rows as $row) {
-                $totals = IpcrFormRatingCalculator::totalsFromQ3Q4(
-                    (float) $row['rating_q3_target'],
-                    (float) $row['rating_q3_actual'],
-                    (float) $row['rating_q4_target'],
-                    (float) $row['rating_q4_actual'],
-                );
-
-                if ($totals['target_total'] <= 0) {
-                    return back()->withErrors([
-                        'commitments' => 'Q3 + Q4 target totals must be greater than zero for each commitment.',
-                    ]);
-                }
-            }
-
             $sumWeighted = 0.0;
 
             foreach ($rows as $row) {
                 $commitment = $submission->commitments->firstWhere('id', (int) $row['id']);
 
+                $q3Target = IpcrFormRatingCalculator::nullableWholeNumber($row['rating_q3_target'] ?? null);
+                $q3Actual = IpcrFormRatingCalculator::nullableWholeNumber($row['rating_q3_actual'] ?? null);
+                $q4Target = IpcrFormRatingCalculator::nullableWholeNumber($row['rating_q4_target'] ?? null);
+                $q4Actual = IpcrFormRatingCalculator::nullableWholeNumber($row['rating_q4_actual'] ?? null);
+
                 $totals = IpcrFormRatingCalculator::totalsFromQ3Q4(
-                    (float) $row['rating_q3_target'],
-                    (float) $row['rating_q3_actual'],
-                    (float) $row['rating_q4_target'],
-                    (float) $row['rating_q4_actual'],
+                    $q3Target,
+                    $q3Actual,
+                    $q4Target,
+                    $q4Actual,
                 );
-                $ratio = $totals['percent'];
 
-                $efficiency = (int) $row['rating_efficiency'];
-                $timeliness = (int) $row['rating_timeliness'];
-
-                $scored = IpcrFormRatingCalculator::scoreRow(
-                    $efficiency,
-                    $timeliness,
+                $scored = IpcrFormRatingCalculator::scoreRowFromRatings(
+                    (int) $row['rating_quality'],
+                    (int) $row['rating_efficiency'],
+                    (int) $row['rating_timeliness'],
                     (float) $commitment->weight,
-                    $ratio,
                 );
 
                 $commitment->update([
-                    'rating_q3_target' => $row['rating_q3_target'],
-                    'rating_q3_actual' => $row['rating_q3_actual'],
-                    'rating_q4_target' => $row['rating_q4_target'],
-                    'rating_q4_actual' => $row['rating_q4_actual'],
+                    'rating_q3_target' => $q3Target,
+                    'rating_q3_actual' => $q3Actual,
+                    'rating_q4_target' => $q4Target,
+                    'rating_q4_actual' => $q4Actual,
                     'rating_target_total' => $totals['target_total'],
                     'rating_actual_total' => $totals['actual_total'],
                     'rating_percent' => $totals['percent'],
                     'rating_quality' => $scored['quality'],
-                    'rating_efficiency' => $efficiency,
-                    'rating_timeliness' => $timeliness,
+                    'rating_efficiency' => $scored['efficiency'],
+                    'rating_timeliness' => $scored['timeliness'],
                     'rating_average' => $scored['average'],
                     'rating_weighted' => $scored['weighted'],
-                    'remarks' => $row['remarks'] ?? null,
+                    'remarks' => null,
                 ]);
 
                 $sumWeighted += $scored['weighted'];

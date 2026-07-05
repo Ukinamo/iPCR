@@ -7,6 +7,7 @@ import InputLabel from '@/Components/InputLabel.vue';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
 import SecondaryButton from '@/Components/SecondaryButton.vue';
 import TextInput from '@/Components/TextInput.vue';
+import { formatWholeNumber, roundWholeNumberForSubmit } from '@/utils/numberFormat';
 import { Head, Link, useForm } from '@inertiajs/vue3';
 import { computed } from 'vue';
 
@@ -38,29 +39,28 @@ const packageEvidence = computed(() => {
     return list.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 });
 
-const reviewForm = useForm({
-    action: 'approve',
-    supervisor_feedback: props.submission?.supervisor_feedback ?? '',
-    commitments: sortedCommitments.value.map((c) => ({
-        id: c.id,
-        rating_efficiency: c.rating_efficiency ?? 3,
-        rating_timeliness: c.rating_timeliness ?? 3,
-        rating_q3_target: c.rating_q3_target ?? '',
-        rating_q3_actual: c.rating_q3_actual ?? '',
-        rating_q4_target: c.rating_q4_target ?? '',
-        rating_q4_actual: c.rating_q4_actual ?? '',
-        remarks: c.remarks ?? '',
-    })),
-});
+function parseNullableNum(value) {
+    if (value === '' || value == null) {
+        return null;
+    }
+    const n = Number(value);
+    return Number.isFinite(n) ? n : null;
+}
 
 function accomplishmentRatio(q3Target, q3Actual, q4Target, q4Actual) {
-    const t3 = Number(q3Target || 0);
-    const a3 = Number(q3Actual || 0);
-    const t4 = Number(q4Target || 0);
-    const a4 = Number(q4Actual || 0);
-    const targetTotal = Math.max(0, t3 + t4);
-    const actualTotal = Math.max(0, a3 + a4);
-    const percent = targetTotal > 0 ? actualTotal / targetTotal : 0;
+    const t3 = parseNullableNum(q3Target);
+    const a3 = parseNullableNum(q3Actual);
+    const t4 = parseNullableNum(q4Target);
+    const a4 = parseNullableNum(q4Actual);
+
+    if (t3 === null && a3 === null && t4 === null && a4 === null) {
+        return { targetTotal: null, actualTotal: null, percent: null };
+    }
+
+    const targetTotal = (t3 ?? 0) + (t4 ?? 0);
+    const actualTotal = (a3 ?? 0) + (a4 ?? 0);
+    const percent = targetTotal > 0 ? actualTotal / targetTotal : null;
+
     return { targetTotal, actualTotal, percent };
 }
 
@@ -72,6 +72,46 @@ function qualityFromRatio(n) {
     return 1;
 }
 
+function suggestedRating(q3Target, q3Actual, q4Target, q4Actual) {
+    const ratio = accomplishmentRatio(q3Target, q3Actual, q4Target, q4Actual);
+    if (ratio.percent == null) {
+        return null;
+    }
+    return qualityFromRatio(ratio.percent);
+}
+
+function formatAccomplishmentValue(value) {
+    return formatWholeNumber(value);
+}
+
+function formatAccomplishmentPercent(percent) {
+    return percent != null ? `${(percent * 100).toFixed(0)}%` : '—';
+}
+
+
+const reviewForm = useForm({
+    action: 'approve',
+    supervisor_feedback: props.submission?.supervisor_feedback ?? '',
+    commitments: sortedCommitments.value.map((c) => {
+        const suggested = suggestedRating(
+            c.rating_q3_target ?? '',
+            c.rating_q3_actual ?? '',
+            c.rating_q4_target ?? '',
+            c.rating_q4_actual ?? '',
+        );
+        return {
+            id: c.id,
+            rating_quality: c.rating_quality ?? suggested ?? 3,
+            rating_efficiency: c.rating_efficiency ?? suggested ?? 3,
+            rating_timeliness: c.rating_timeliness ?? suggested ?? 3,
+            rating_q3_target: c.rating_q3_target ?? '',
+            rating_q3_actual: c.rating_q3_actual ?? '',
+            rating_q4_target: c.rating_q4_target ?? '',
+            rating_q4_actual: c.rating_q4_actual ?? '',
+        };
+    }),
+});
+
 function rowPreview(commitment, row) {
     const ratio = accomplishmentRatio(
         row.rating_q3_target,
@@ -79,15 +119,30 @@ function rowPreview(commitment, row) {
         row.rating_q4_target,
         row.rating_q4_actual,
     );
-    const q = qualityFromRatio(ratio.percent);
+    const q = Number(row.rating_quality);
     const e = Number(row.rating_efficiency);
     const t = Number(row.rating_timeliness);
-    if (!Number.isFinite(e) || !Number.isFinite(t)) {
-        return { ...ratio, q, avg: null, weighted: null };
+    if (!Number.isFinite(q) || !Number.isFinite(e) || !Number.isFinite(t)) {
+        return { ...ratio, q: null, e: null, t: null, avg: null, weighted: null };
     }
     const avg = (q + e + t) / 3;
     const w = Number(commitment.weight) / 100;
-    return { ...ratio, q, avg, weighted: avg * w };
+    return { ...ratio, q, e, t, avg, weighted: avg * w };
+}
+
+function applySuggestedRatings(row) {
+    const suggested = suggestedRating(
+        row.rating_q3_target,
+        row.rating_q3_actual,
+        row.rating_q4_target,
+        row.rating_q4_actual,
+    );
+    if (suggested == null) {
+        return;
+    }
+    row.rating_quality = suggested;
+    row.rating_efficiency = suggested;
+    row.rating_timeliness = suggested;
 }
 
 function sumWeightedPreview() {
@@ -100,6 +155,26 @@ function sumWeightedPreview() {
         sum += p.weighted;
     }
     return sum;
+}
+
+function sumAveragePreview() {
+    let sum = 0;
+    for (const c of sortedCommitments.value) {
+        const row = reviewForm.commitments.find((r) => r.id === c.id);
+        if (!row) return null;
+        const p = rowPreview(c, row);
+        if (p.avg == null) return null;
+        sum += p.avg;
+    }
+    return sum;
+}
+
+function rowWeightedDisplay(commitment, row) {
+    if (isApproved.value && commitment.rating_weighted != null) {
+        return Number(commitment.rating_weighted).toFixed(2);
+    }
+    const p = rowPreview(commitment, row);
+    return p.weighted != null ? p.weighted.toFixed(2) : '—';
 }
 
 function indicatorLines(c) {
@@ -180,13 +255,13 @@ function submitReview() {
             supervisor_feedback: data.supervisor_feedback,
             commitments: data.commitments.map((r) => ({
                 id: r.id,
+                rating_quality: Number(r.rating_quality),
                 rating_efficiency: Number(r.rating_efficiency),
                 rating_timeliness: Number(r.rating_timeliness),
-                rating_q3_target: r.rating_q3_target === '' || r.rating_q3_target == null ? 0 : Number(r.rating_q3_target),
-                rating_q3_actual: r.rating_q3_actual === '' || r.rating_q3_actual == null ? 0 : Number(r.rating_q3_actual),
-                rating_q4_target: r.rating_q4_target === '' || r.rating_q4_target == null ? 0 : Number(r.rating_q4_target),
-                rating_q4_actual: r.rating_q4_actual === '' || r.rating_q4_actual == null ? 0 : Number(r.rating_q4_actual),
-                remarks: r.remarks ?? '',
+                rating_q3_target: roundWholeNumberForSubmit(r.rating_q3_target),
+                rating_q3_actual: roundWholeNumberForSubmit(r.rating_q3_actual),
+                rating_q4_target: roundWholeNumberForSubmit(r.rating_q4_target),
+                rating_q4_actual: roundWholeNumberForSubmit(r.rating_q4_actual),
             })),
         };
     }).patch(route('supervisor.submissions.update', props.submission.id), {
@@ -251,8 +326,9 @@ function badge(status) {
                     <p class="text-sm font-semibold text-slate-800">IPCR Form 1 — Evaluation</p>
                     <p class="mt-1 text-xs text-slate-500">
                         <template v-if="isEditable">
-                            Fill in Q3 and Q4 <strong>Target</strong> / <strong>Actual</strong> per indicator. Quality is auto-computed from the
-                            accomplishment ratio; supply Efficiency (E) and Timeliness (T). Average = (Q + E + T) ÷ 3.
+                            Fill in Q3 and Q4 <strong>Target</strong> / <strong>Actual</strong> per indicator (optional).
+                            Q, E, and T default from the accomplishment ratio when targets and actuals are provided.
+                            Average = (Q + E + T) ÷ 3. Remarks = Weight% × Average; TOTAL Remarks = sum of row Remarks (final rating).
                         </template>
                         <template v-else-if="isApproved">
                             This submission has been approved. Ratings shown below are read-only.
@@ -346,47 +422,79 @@ function badge(status) {
                                             </td>
                                             <template v-if="row.lineIndex === 0 && ratingRow(row.commitment.id)">
                                                 <td :rowspan="row.lineCount" class="border border-slate-300 px-1 py-1">
-                                                    <TextInput v-if="isEditable" v-model="ratingRow(row.commitment.id).rating_q3_target" type="number" step="any" class="w-16 text-xs" />
-                                                    <span v-else class="block text-center text-slate-700">{{ ratingRow(row.commitment.id).rating_q3_target ?? '—' }}</span>
+                                                    <TextInput
+                                                        v-if="isEditable"
+                                                        v-model="ratingRow(row.commitment.id).rating_q3_target"
+                                                        type="number"
+                                                        step="1"
+                                                        min="0"
+                                                        class="w-16 text-xs"
+                                                        @change="applySuggestedRatings(ratingRow(row.commitment.id))"
+                                                    />
+                                                    <span v-else class="block text-center text-slate-700">{{ formatWholeNumber(row.commitment.rating_q3_target) }}</span>
                                                 </td>
                                                 <td :rowspan="row.lineCount" class="border border-slate-300 px-1 py-1">
-                                                    <TextInput v-if="isEditable" v-model="ratingRow(row.commitment.id).rating_q3_actual" type="number" step="any" class="w-16 text-xs" />
-                                                    <span v-else class="block text-center text-slate-700">{{ ratingRow(row.commitment.id).rating_q3_actual ?? '—' }}</span>
+                                                    <TextInput
+                                                        v-if="isEditable"
+                                                        v-model="ratingRow(row.commitment.id).rating_q3_actual"
+                                                        type="number"
+                                                        step="1"
+                                                        min="0"
+                                                        class="w-16 text-xs"
+                                                        @change="applySuggestedRatings(ratingRow(row.commitment.id))"
+                                                    />
+                                                    <span v-else class="block text-center text-slate-700">{{ formatWholeNumber(row.commitment.rating_q3_actual) }}</span>
                                                 </td>
                                                 <td :rowspan="row.lineCount" class="border border-slate-300 px-1 py-1">
-                                                    <TextInput v-if="isEditable" v-model="ratingRow(row.commitment.id).rating_q4_target" type="number" step="any" class="w-16 text-xs" />
-                                                    <span v-else class="block text-center text-slate-700">{{ ratingRow(row.commitment.id).rating_q4_target ?? '—' }}</span>
+                                                    <TextInput
+                                                        v-if="isEditable"
+                                                        v-model="ratingRow(row.commitment.id).rating_q4_target"
+                                                        type="number"
+                                                        step="1"
+                                                        min="0"
+                                                        class="w-16 text-xs"
+                                                        @change="applySuggestedRatings(ratingRow(row.commitment.id))"
+                                                    />
+                                                    <span v-else class="block text-center text-slate-700">{{ formatWholeNumber(row.commitment.rating_q4_target) }}</span>
                                                 </td>
                                                 <td :rowspan="row.lineCount" class="border border-slate-300 px-1 py-1">
-                                                    <TextInput v-if="isEditable" v-model="ratingRow(row.commitment.id).rating_q4_actual" type="number" step="any" class="w-16 text-xs" />
-                                                    <span v-else class="block text-center text-slate-700">{{ ratingRow(row.commitment.id).rating_q4_actual ?? '—' }}</span>
+                                                    <TextInput
+                                                        v-if="isEditable"
+                                                        v-model="ratingRow(row.commitment.id).rating_q4_actual"
+                                                        type="number"
+                                                        step="1"
+                                                        min="0"
+                                                        class="w-16 text-xs"
+                                                        @change="applySuggestedRatings(ratingRow(row.commitment.id))"
+                                                    />
+                                                    <span v-else class="block text-center text-slate-700">{{ formatWholeNumber(row.commitment.rating_q4_actual) }}</span>
                                                 </td>
                                                 <td :rowspan="row.lineCount" class="border border-slate-300 px-2 py-1 text-center text-slate-700">
-                                                    {{ rowPreview(row.commitment, ratingRow(row.commitment.id)).targetTotal.toFixed(0) }}
+                                                    {{ formatAccomplishmentValue(rowPreview(row.commitment, ratingRow(row.commitment.id)).targetTotal) }}
                                                 </td>
                                                 <td :rowspan="row.lineCount" class="border border-slate-300 px-2 py-1 text-center text-slate-700">
-                                                    {{ rowPreview(row.commitment, ratingRow(row.commitment.id)).actualTotal.toFixed(0) }}
+                                                    {{ formatAccomplishmentValue(rowPreview(row.commitment, ratingRow(row.commitment.id)).actualTotal) }}
                                                 </td>
                                                 <td :rowspan="row.lineCount" class="border border-slate-300 px-2 py-1 text-center text-slate-700">
-                                                    {{ (rowPreview(row.commitment, ratingRow(row.commitment.id)).percent * 100).toFixed(0) }}%
+                                                    {{ formatAccomplishmentPercent(rowPreview(row.commitment, ratingRow(row.commitment.id)).percent) }}
                                                 </td>
-                                                <td :rowspan="row.lineCount" class="border border-slate-300 px-2 py-1 text-center font-semibold text-slate-800">
-                                                    {{ rowPreview(row.commitment, ratingRow(row.commitment.id)).q }}
+                                                <td :rowspan="row.lineCount" class="border border-slate-300 px-1 py-1">
+                                                    <TextInput v-if="isEditable" v-model="ratingRow(row.commitment.id).rating_quality" type="number" min="1" max="5" class="w-14 text-xs" />
+                                                    <span v-else class="block text-center text-slate-700">{{ row.commitment.rating_quality ?? '—' }}</span>
                                                 </td>
                                                 <td :rowspan="row.lineCount" class="border border-slate-300 px-1 py-1">
                                                     <TextInput v-if="isEditable" v-model="ratingRow(row.commitment.id).rating_efficiency" type="number" min="1" max="5" class="w-14 text-xs" />
-                                                    <span v-else class="block text-center text-slate-700">{{ ratingRow(row.commitment.id).rating_efficiency ?? '—' }}</span>
+                                                    <span v-else class="block text-center text-slate-700">{{ row.commitment.rating_efficiency ?? '—' }}</span>
                                                 </td>
                                                 <td :rowspan="row.lineCount" class="border border-slate-300 px-1 py-1">
                                                     <TextInput v-if="isEditable" v-model="ratingRow(row.commitment.id).rating_timeliness" type="number" min="1" max="5" class="w-14 text-xs" />
-                                                    <span v-else class="block text-center text-slate-700">{{ ratingRow(row.commitment.id).rating_timeliness ?? '—' }}</span>
+                                                    <span v-else class="block text-center text-slate-700">{{ row.commitment.rating_timeliness ?? '—' }}</span>
                                                 </td>
                                                 <td :rowspan="row.lineCount" class="border border-slate-300 px-2 py-1 text-center font-semibold text-slate-800">
                                                     {{ rowPreview(row.commitment, ratingRow(row.commitment.id)).avg != null ? rowPreview(row.commitment, ratingRow(row.commitment.id)).avg.toFixed(2) : '—' }}
                                                 </td>
-                                                <td :rowspan="row.lineCount" class="border border-slate-300 px-1 py-1">
-                                                    <TextInput v-if="isEditable" v-model="ratingRow(row.commitment.id).remarks" type="text" class="w-32 text-xs" />
-                                                    <span v-else class="block text-slate-700">{{ ratingRow(row.commitment.id).remarks || '—' }}</span>
+                                                <td :rowspan="row.lineCount" class="border border-slate-300 px-2 py-1 text-center font-semibold text-amber-800">
+                                                    {{ rowWeightedDisplay(row.commitment, ratingRow(row.commitment.id)) }}
                                                 </td>
                                             </template>
                                         </tr>
@@ -397,13 +505,25 @@ function badge(status) {
                                     <td class="border border-slate-300 px-2 py-1 text-center">
                                         {{ sortedCommitments.reduce((a, c) => a + Number(c.weight || 0), 0).toFixed(0) }}%
                                     </td>
-                                    <td colspan="11" class="border border-slate-300"></td>
+                                    <td colspan="2" class="border border-slate-300"></td>
+                                    <td colspan="7" class="border border-slate-300"></td>
+                                    <td colspan="3" class="border border-slate-300"></td>
+                                    <td class="border border-slate-300 px-2 py-1 text-center text-slate-800">
+                                        {{ isApproved
+                                            ? sortedCommitments.reduce((a, c) => a + Number(c.rating_average || 0), 0).toFixed(2)
+                                            : (sumAveragePreview() != null ? sumAveragePreview().toFixed(2) : '—') }}
+                                    </td>
                                     <td class="border border-slate-300 px-2 py-1 text-center text-amber-800">
                                         {{ isApproved && submission.overall_rating != null
                                             ? Number(submission.overall_rating).toFixed(2)
                                             : (sumWeightedPreview() != null ? sumWeightedPreview().toFixed(2) : '—') }}
                                     </td>
-                                    <td class="border border-slate-300"></td>
+                                </tr>
+                                <tr v-if="isApproved && submission.overall_rating != null" class="bg-amber-50 font-semibold text-amber-900">
+                                    <td colspan="2" class="border border-slate-300 px-2 py-1 text-right">FINAL AVERAGE RATING</td>
+                                    <td colspan="15" class="border border-slate-300 px-2 py-1 text-center">
+                                        {{ Number(submission.overall_rating).toFixed(2) }}
+                                    </td>
                                 </tr>
                             </tbody>
                         </table>
@@ -479,8 +599,8 @@ function badge(status) {
                     <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
                         <p class="font-semibold text-slate-700">Legend</p>
                         <p class="mt-1 text-slate-600">
-                            Q = Quality (auto), E = Efficiency, T = Timeliness. Average = (Q + E + T) ÷ 3.
-                            Package overall = Σ (Average × Weight%).
+                            Q, E, and T default from accomplishment % (see scale) and may be overridden. Average = (Q + E + T) ÷ 3.
+                            Remarks = Weight% × Average. TOTAL Remarks = Σ Remarks = final average rating.
                         </p>
                     </div>
                 </div>

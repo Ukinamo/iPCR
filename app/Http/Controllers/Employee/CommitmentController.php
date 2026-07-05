@@ -6,6 +6,7 @@ use App\Enums\CommitmentStatus;
 use App\Http\Controllers\Controller;
 use App\Models\Accomplishment;
 use App\Models\Commitment;
+use App\Models\IpcrSubmission;
 use App\Models\User;
 use App\Services\AuditLogger;
 use App\Services\CommitmentPeriodGuard;
@@ -242,22 +243,7 @@ class CommitmentController extends Controller
     {
         $this->authorizeCommitment($request, $commitment);
 
-        $query = Commitment::query()
-            ->where('user_id', $commitment->user_id)
-            ->with(['accomplishments' => fn ($q) => $q->orderByDesc('created_at')]);
-
-        if (! empty($commitment->batch_id)) {
-            $query->where('batch_id', $commitment->batch_id);
-        } else {
-            $query
-                ->whereNull('batch_id')
-                ->where('evaluation_year', $commitment->evaluation_year)
-                ->where('evaluation_quarter', $commitment->evaluation_quarter)
-                ->where('function_type', $commitment->function_type)
-                ->where('title', $commitment->title);
-        }
-
-        $siblings = $query->orderBy('function_type')->orderBy('id')->get();
+        $siblings = $this->siblingsFor($commitment);
 
         $totalWeight = (float) $siblings->sum('weight');
         $totalEvidence = (int) $siblings->sum(fn ($c) => $c->accomplishments->count());
@@ -266,6 +252,18 @@ class CommitmentController extends Controller
             ->map(fn ($c) => ['function_type' => $c->function_type, 'title' => $c->title])
             ->unique(fn ($r) => $r['function_type'].'|'.$r['title'])
             ->values();
+
+        $weightSummary = CommitmentWeightRules::summaryForEmployee(
+            $commitment->user_id,
+            (int) $commitment->evaluation_year,
+            (int) $commitment->evaluation_quarter,
+        );
+
+        $submission = IpcrSubmission::query()
+            ->where('employee_id', $commitment->user_id)
+            ->where('evaluation_year', $commitment->evaluation_year)
+            ->where('evaluation_quarter', $commitment->evaluation_quarter)
+            ->first();
 
         return Inertia::render('Employee/CommitmentShow', [
             'group' => [
@@ -281,7 +279,121 @@ class CommitmentController extends Controller
                 'created_at' => optional($siblings->first()?->created_at)->toIso8601String(),
             ],
             'commitments' => $siblings,
+            'weightSummary' => $weightSummary,
+            'submission' => $submission ? [
+                'status' => $submission->status->value,
+                'supervisor_feedback' => $submission->supervisor_feedback,
+            ] : null,
         ]);
+    }
+
+    public function updateBatch(Request $request, Commitment $commitment): RedirectResponse
+    {
+        $this->authorizeCommitment($request, $commitment);
+
+        $siblings = $this->siblingsFor($commitment);
+
+        if ($siblings->contains(fn ($c) => ! in_array($c->status, [CommitmentStatus::Draft, CommitmentStatus::Returned], true))) {
+            return back()->withErrors(['entries' => 'Only draft or returned commitment packages can be edited.']);
+        }
+
+        $data = $request->validate([
+            'period_label' => ['required', 'string', 'max:32'],
+            'entries' => ['required', 'array', 'min:1'],
+            'entries.*.id' => ['nullable', 'integer'],
+            'entries.*.function_type' => ['required', 'in:core,strategic'],
+            'entries.*.title' => ['required', 'string', 'max:255'],
+            'entries.*.description' => ['nullable', 'string', 'max:8000'],
+            'entries.*.weight' => ['required', 'numeric', 'min:0', 'max:100'],
+            'entries.*.annual_office_target' => ['nullable', 'string', 'max:255'],
+            'entries.*.individual_annual_targets' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        $user = $request->user();
+        $year = (int) $commitment->evaluation_year;
+        $quarter = (int) $commitment->evaluation_quarter;
+        $siblingIds = $siblings->pluck('id')->all();
+
+        foreach ($data['entries'] as $index => $entry) {
+            if (! empty($entry['id']) && ! in_array((int) $entry['id'], $siblingIds, true)) {
+                throw ValidationException::withMessages([
+                    "entries.{$index}.id" => 'Invalid commitment row for this package.',
+                ]);
+            }
+        }
+
+        $otherTotals = CommitmentWeightRules::totalsExcludingCommitmentIds($user->id, $year, $quarter, $siblingIds);
+        $core = $otherTotals['core'];
+        $strategic = $otherTotals['strategic'];
+
+        foreach ($data['entries'] as $entry) {
+            if ($entry['function_type'] === 'core') {
+                $core += (float) $entry['weight'];
+            } else {
+                $strategic += (float) $entry['weight'];
+            }
+
+            $message = CommitmentWeightRules::assertCapsRespected($core, $strategic);
+            if ($message !== null) {
+                throw ValidationException::withMessages(['entries' => $message]);
+            }
+        }
+
+        $incomingIds = collect($data['entries'])
+            ->pluck('id')
+            ->filter()
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        $status = $siblings->contains(fn ($c) => $c->status === CommitmentStatus::Returned)
+            ? CommitmentStatus::Returned
+            : CommitmentStatus::Draft;
+
+        DB::transaction(function () use ($request, $user, $commitment, $siblings, $data, $incomingIds, $status) {
+            foreach ($data['entries'] as $entry) {
+                $payload = [
+                    'title' => $entry['title'],
+                    'description' => $entry['description'] ?? null,
+                    'function_type' => $entry['function_type'],
+                    'weight' => $entry['weight'],
+                    'annual_office_target' => $entry['annual_office_target'] ?? null,
+                    'individual_annual_targets' => $entry['individual_annual_targets'] ?? null,
+                    'period_label' => $data['period_label'],
+                    'status' => $status,
+                ];
+
+                if (! empty($entry['id'])) {
+                    $row = $siblings->firstWhere('id', (int) $entry['id']);
+                    if ($row) {
+                        $row->update($payload);
+                        AuditLogger::log($user->id, 'commitment.updated', $row, null, $request);
+
+                        continue;
+                    }
+                }
+
+                $created = Commitment::create([
+                    ...$payload,
+                    'user_id' => $user->id,
+                    'batch_id' => $commitment->batch_id,
+                    'ipcr_submission_id' => $commitment->ipcr_submission_id,
+                    'evaluation_year' => $commitment->evaluation_year,
+                    'evaluation_quarter' => $commitment->evaluation_quarter,
+                    'progress' => 0,
+                ]);
+
+                AuditLogger::log($user->id, 'commitment.created', $created, null, $request);
+            }
+
+            $siblings->each(function (Commitment $row) use ($incomingIds, $request, $user) {
+                if (! in_array($row->id, $incomingIds, true)) {
+                    $row->delete();
+                    AuditLogger::log($user->id, 'commitment.deleted', null, ['id' => $row->id], $request);
+                }
+            });
+        });
+
+        return back()->with('status', 'Commitments updated.');
     }
 
     public function update(Request $request, Commitment $commitment): RedirectResponse
@@ -335,6 +447,31 @@ class CommitmentController extends Controller
     private function authorizeCommitment(Request $request, Commitment $commitment): void
     {
         abort_if($commitment->user_id !== $request->user()->id, 403);
+    }
+
+    /**
+     * @return \Illuminate\Support\Collection<int, Commitment>
+     */
+    private function siblingsFor(Commitment $commitment)
+    {
+        $query = Commitment::query()
+            ->where('user_id', $commitment->user_id)
+            ->with(['accomplishments' => fn ($q) => $q->orderByDesc('created_at')]);
+
+        if (! empty($commitment->batch_id)) {
+            $query->where('batch_id', $commitment->batch_id);
+        } elseif ($commitment->ipcr_submission_id) {
+            $query->where('ipcr_submission_id', $commitment->ipcr_submission_id);
+        } else {
+            $query
+                ->whereNull('batch_id')
+                ->where('evaluation_year', $commitment->evaluation_year)
+                ->where('evaluation_quarter', $commitment->evaluation_quarter)
+                ->where('function_type', $commitment->function_type)
+                ->where('title', $commitment->title);
+        }
+
+        return $query->orderBy('function_type')->orderBy('id')->get();
     }
 
     private function assertPeriodNotLocked(User $user, int $year, int $quarter, string $errorKey = 'title'): void

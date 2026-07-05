@@ -384,10 +384,10 @@ final class IpcrApprovedFormExporter
             $sheet->setCellValueExplicit(self::cell(self::COL_INDIVIDUAL_TARGET, $start), $individualTarget, DataType::TYPE_STRING);
         }
 
-        self::setNum($sheet, self::COL_Q3_TARGET, $start, $c->rating_q3_target);
-        self::setNum($sheet, self::COL_Q3_ACTUAL, $start, $c->rating_q3_actual);
-        self::setNum($sheet, self::COL_Q4_TARGET, $start, $c->rating_q4_target);
-        self::setNum($sheet, self::COL_Q4_ACTUAL, $start, $c->rating_q4_actual);
+        self::setWholeNum($sheet, self::COL_Q3_TARGET, $start, $c->rating_q3_target);
+        self::setWholeNum($sheet, self::COL_Q3_ACTUAL, $start, $c->rating_q3_actual);
+        self::setWholeNum($sheet, self::COL_Q4_TARGET, $start, $c->rating_q4_target);
+        self::setWholeNum($sheet, self::COL_Q4_ACTUAL, $start, $c->rating_q4_actual);
         self::setNum($sheet, self::COL_TOTAL_TARGET, $start, $c->rating_target_total);
         self::setNum($sheet, self::COL_TOTAL_ACTUAL, $start, $c->rating_actual_total);
 
@@ -408,15 +408,31 @@ final class IpcrApprovedFormExporter
             $sheet->setCellValue(self::cell(self::COL_AVERAGE, $start), (float) $c->rating_average);
         }
 
-        $remark = trim((string) ($c->remarks ?? ''));
-        if ($remark !== '') {
-            $sheet->setCellValueExplicit(self::cell(self::COL_REMARKS, $start), $remark, DataType::TYPE_STRING);
+        $weighted = self::weightedRemarkScore($c);
+        if ($weighted !== null) {
+            $sheet->setCellValue(self::cell(self::COL_REMARKS, $start), $weighted);
         }
 
         self::applyThinBorders($sheet, self::cell(1, $start).':'.self::col(self::LAST_COL).$end);
         self::applyTextCellAlignment($sheet, $start, $end);
 
         return $end + 1;
+    }
+
+    private static function weightedRemarkScore(Commitment $c): ?float
+    {
+        if ($c->rating_weighted !== null) {
+            return round((float) $c->rating_weighted, 2);
+        }
+
+        if ($c->rating_average !== null) {
+            return IpcrFormRatingCalculator::weightedFromAverageAndWeight(
+                (float) $c->rating_average,
+                (float) $c->weight,
+            );
+        }
+
+        return null;
     }
 
     /**
@@ -437,7 +453,7 @@ final class IpcrApprovedFormExporter
         $avgSum = round((float) $commitments->sum('rating_average'), 2);
         $sheet->setCellValue(self::cell(self::COL_AVERAGE, $row), $avgSum);
 
-        $weightedSum = round((float) $commitments->sum('rating_weighted'), 2);
+        $weightedSum = round($commitments->sum(fn (Commitment $c) => self::weightedRemarkScore($c) ?? 0.0), 2);
         $sheet->setCellValue(self::cell(self::COL_REMARKS, $row), $weightedSum);
     }
 
@@ -498,6 +514,17 @@ final class IpcrApprovedFormExporter
         $parts = array_values(array_filter(array_map('trim', $parts), fn ($line) => $line !== ''));
 
         return empty($parts) ? [(string) $c->title] : $parts;
+    }
+
+    private static function setWholeNum(Worksheet $sheet, int $col, int $row, mixed $value): void
+    {
+        if ($value === null || $value === '') {
+            return;
+        }
+
+        $cell = self::cell($col, $row);
+        $sheet->setCellValue($cell, (float) round((float) $value));
+        $sheet->getStyle($cell)->getNumberFormat()->setFormatCode('#,##0');
     }
 
     private static function setNum(Worksheet $sheet, int $col, int $row, mixed $value): void

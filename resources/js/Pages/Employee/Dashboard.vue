@@ -1,11 +1,9 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
-import EvidencePanel from '@/Components/EvidencePanel.vue';
-import InputError from '@/Components/InputError.vue';
-import InputLabel from '@/Components/InputLabel.vue';
+import CommitmentPackageForm from '@/Components/CommitmentPackageForm.vue';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
 import SecondaryButton from '@/Components/SecondaryButton.vue';
-import TextInput from '@/Components/TextInput.vue';
+import { formatDecimal, formatWholeNumber } from '@/utils/numberFormat';
 import { Head, useForm, router } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
 
@@ -72,71 +70,18 @@ function newEntry(functionType, defaultWeight) {
     };
 }
 
-function addItemRow(entryIdx) {
-    const entry = commitmentForm.entries[entryIdx];
-    if (!entry) return;
-    entry.items.push(newItem(0));
-}
-
-function removeItemRow(entryIdx, itemIdx) {
-    const entry = commitmentForm.entries[entryIdx];
-    if (!entry || entry.items.length <= 1) return;
-    entry.items.splice(itemIdx, 1);
-}
-
-function entryWeightTotal(entry) {
-    return (entry.items || []).reduce((sum, it) => sum + Number(it.weight || 0), 0);
-}
-
-function sectionCap(type) {
-    return type === 'core'
-        ? Number(props.weightSummary?.core_cap ?? 60)
-        : Number(props.weightSummary?.strategic_cap ?? 40);
-}
-
-function sectionWeightTotal(type) {
-    return commitmentForm.entries
-        .filter((e) => e.enabled && e.function_type === type)
-        .reduce((sum, e) => sum + entryWeightTotal(e), 0);
-}
-
-function sectionRemaining(type) {
-    const remaining = sectionCap(type) - sectionWeightTotal(type);
-    return Math.max(0, Math.round(remaining * 100) / 100);
-}
-
-function addFunctionEntry(type) {
-    const last = [...commitmentForm.entries].reverse().findIndex((e) => e.function_type === type);
-    const insertAt = last === -1
-        ? commitmentForm.entries.length
-        : commitmentForm.entries.length - last;
-    commitmentForm.entries.splice(insertAt, 0, newEntry(type, 0));
-}
-
-function removeFunctionEntry(eIdx) {
-    const sameType = commitmentForm.entries.filter(
-        (e) => e.function_type === commitmentForm.entries[eIdx]?.function_type,
-    );
-    if (sameType.length <= 1) return;
-    commitmentForm.entries.splice(eIdx, 1);
-}
-
-const commitmentErrorList = computed(() => {
-    const errs = commitmentForm.errors || {};
-    return Object.values(errs).filter((m) => typeof m === 'string' && m.length);
-});
-
 const groupedCommitments = computed(() => {
     const groups = new Map();
     const statusRank = { draft: 0, returned: 1, in_review: 2, approved: 3 };
 
     for (const c of props.commitments || []) {
-        const key = c.batch_id || `solo-${c.id}`;
+        const key = packageGroupKey(c);
         if (!groups.has(key)) {
             groups.set(key, {
                 key,
                 first_id: c.id,
                 batch_id: c.batch_id,
+                ipcr_submission_id: c.ipcr_submission_id,
                 period_label: c.period_label,
                 status: c.status,
                 items: [],
@@ -144,14 +89,28 @@ const groupedCommitments = computed(() => {
                 total_weight: 0,
                 total_evidence: 0,
                 created_at: c.created_at,
+                has_core: false,
+                has_strategic: false,
             });
         }
         const g = groups.get(key);
+        if (!g.first_id || c.id < g.first_id) {
+            g.first_id = c.id;
+        }
         g.items.push(c);
         g.total_weight += Number(c.weight || 0);
         g.total_evidence += (c.accomplishments?.length || 0);
+        if (c.function_type === 'core') {
+            g.has_core = true;
+        }
+        if (c.function_type === 'strategic') {
+            g.has_strategic = true;
+        }
         if ((statusRank[c.status] ?? -1) < (statusRank[g.status] ?? -1)) {
             g.status = c.status;
+        }
+        if (!g.created_at || (c.created_at && c.created_at < g.created_at)) {
+            g.created_at = c.created_at;
         }
         const fnKey = `${c.function_type}|${c.title}`;
         if (!g.functionMap.has(fnKey)) {
@@ -165,6 +124,34 @@ const groupedCommitments = computed(() => {
         functions: Array.from(g.functionMap.values()),
     }));
 });
+
+function packageGroupKey(c) {
+    if (c.batch_id) {
+        return `batch:${c.batch_id}`;
+    }
+
+    if (c.ipcr_submission_id) {
+        return `submission:${c.ipcr_submission_id}`;
+    }
+
+    return `solo:${c.id}`;
+}
+
+function packageCardTitle(group) {
+    if (group.status === 'returned') {
+        return 'Returned IPCR package';
+    }
+
+    if (group.has_core && group.has_strategic) {
+        return 'IPCR package (Core + Strategic)';
+    }
+
+    return 'Commitment package';
+}
+
+function packageIsEditable(status) {
+    return status === 'draft' || status === 'returned';
+}
 
 function formatBatchDate(iso) {
     if (!iso) return '';
@@ -180,18 +167,6 @@ function formatBatchDate(iso) {
         return '';
     }
 }
-
-const coreEntries = computed(() =>
-    commitmentForm.entries
-        .map((entry, idx) => ({ entry, idx }))
-        .filter((x) => x.entry.function_type === 'core'),
-);
-
-const strategicEntries = computed(() =>
-    commitmentForm.entries
-        .map((entry, idx) => ({ entry, idx }))
-        .filter((x) => x.entry.function_type === 'strategic'),
-);
 
 function openCreateCommitmentPanel() {
     if (!props.canAddCommitment) {
@@ -259,17 +234,6 @@ function submitNewCommitment() {
     });
 }
 
-const editId = ref(null);
-const editForm = useForm({
-    title: '',
-    description: '',
-    function_type: 'core',
-    weight: 0,
-    annual_office_target: '',
-    individual_annual_targets: '',
-    period_label: props.period.label,
-});
-
 const submitPeriodForm = useForm({
     evaluation_year: props.period.year,
     evaluation_quarter: props.period.quarter,
@@ -296,32 +260,6 @@ function submissionTitle(status) {
     return m[status] ?? status;
 }
 
-function startEdit(c) {
-    editId.value = c.id;
-    editForm.title = c.title;
-    editForm.description = c.description ?? '';
-    editForm.function_type = c.function_type;
-    editForm.weight = Number(c.weight);
-    editForm.annual_office_target = c.annual_office_target ?? '';
-    editForm.individual_annual_targets = c.individual_annual_targets ?? '';
-    editForm.period_label = c.period_label;
-}
-
-function saveEdit() {
-    editForm.patch(route('employee.commitments.update', editId.value), {
-        preserveScroll: true,
-        onSuccess: () => {
-            editId.value = null;
-        },
-    });
-}
-
-function destroyCommitment(id) {
-    if (confirm('Delete this commitment?')) {
-        router.delete(route('employee.commitments.destroy', id), { preserveScroll: true });
-    }
-}
-
 function pct(part, cap) {
     return Math.min(100, Math.round((part / cap) * 100));
 }
@@ -329,10 +267,12 @@ function pct(part, cap) {
 function historyTotals(submission) {
     const rows = submission?.commitments || [];
     const weight = rows.reduce((sum, c) => sum + Number(c.weight || 0), 0);
+    const average = rows.reduce((sum, c) => sum + Number(c.rating_average || 0), 0);
     const weighted = rows.reduce((sum, c) => sum + Number(c.rating_weighted || 0), 0);
     return {
         weight: weight.toFixed(2),
-        weighted: weighted.toFixed(2),
+        average: formatDecimal(average, 2),
+        weighted: formatDecimal(weighted, 2),
     };
 }
 
@@ -341,6 +281,20 @@ function indicatorLines(c) {
     if (!desc) return [c?.title ?? ''];
     const lines = desc.split(/\r\n|\r|\n/).map(l => l.trim()).filter(Boolean);
     return lines.length ? lines : [c?.title ?? ''];
+}
+
+function formatAverage(c) {
+    return formatDecimal(c?.rating_average, 2);
+}
+
+function formatWeighted(c) {
+    if (c?.rating_weighted != null) {
+        return Number(c.rating_weighted).toFixed(2);
+    }
+    if (c?.rating_average != null && c?.weight != null) {
+        return (Number(c.rating_average) * (Number(c.weight) / 100)).toFixed(2);
+    }
+    return '—';
 }
 </script>
 
@@ -570,312 +524,18 @@ function indicatorLines(c) {
                             </div>
                         </div>
 
-                        <form class="mt-6 space-y-6" @submit.prevent="submitNewCommitment">
-                            <p class="text-xs text-slate-500">
-                                Fill in your commitments like the IPCR form. Use <strong>+ Add row</strong> under a Function to list multiple
-                                Services/Indicators with their own Weight, Annual Office Target and Individual Annual Targets. Your supervisor fills the
-                                Accomplishments and Rating columns later.
-                            </p>
-
-                            <div class="overflow-x-auto rounded-lg border border-slate-300">
-                                <table class="min-w-full border-collapse text-xs">
-                                    <thead class="bg-slate-100 text-[11px] font-semibold text-slate-700">
-                                        <tr>
-                                            <th class="border border-slate-300 px-2 py-2 text-center" style="min-width: 190px">MFO / PAP<br />(Function)</th>
-                                            <th class="border border-slate-300 px-2 py-2 text-center" style="min-width: 260px">
-                                                Services / Programs / Projects / Indicators
-                                                <br />
-                                                <span class="text-[10px] font-normal normal-case text-slate-500">(one line per indicator — use Enter)</span>
-                                            </th>
-                                            <th class="border border-slate-300 px-2 py-2 text-center" style="min-width: 72px">Weight</th>
-                                            <th class="border border-slate-300 px-2 py-2 text-center" style="min-width: 110px">Annual Office Target</th>
-                                            <th class="border border-slate-300 px-2 py-2 text-center" style="min-width: 110px">Individual Annual Targets</th>
-                                            <th class="border border-slate-300 px-2 py-2 text-center" style="min-width: 44px"></th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        <tr class="bg-blue-50">
-                                            <td
-                                                colspan="6"
-                                                class="border border-slate-300 px-2 py-1 text-center text-[11px] font-bold uppercase tracking-wide"
-                                                :class="sectionWeightTotal('core') > sectionCap('core') + 0.01
-                                                    ? 'bg-rose-100 text-rose-900'
-                                                    : 'text-blue-900'"
-                                            >
-                                                Core Functions · Shared cap {{ sectionCap('core') }}% —
-                                                Σ <strong>{{ sectionWeightTotal('core') }}%</strong> used ·
-                                                <span :class="sectionRemaining('core') === 0 ? 'text-emerald-700' : ''">
-                                                    {{ sectionRemaining('core') }}% remaining
-                                                </span>
-                                                <span v-if="sectionWeightTotal('core') > sectionCap('core') + 0.01">
-                                                    · OVER BY {{ (sectionWeightTotal('core') - sectionCap('core')).toFixed(2) }}%
-                                                </span>
-                                            </td>
-                                        </tr>
-                                        <template v-for="({ entry, idx: eIdx }) in coreEntries" :key="'core-' + eIdx">
-                                            <template v-for="(item, iIdx) in entry.items" :key="item._uid">
-                                                <tr :class="entry.enabled ? '' : 'opacity-50'">
-                                                    <td
-                                                        v-if="iIdx === 0"
-                                                        :rowspan="entry.items.length"
-                                                        class="border border-slate-300 px-2 py-1 align-top"
-                                                    >
-                                                        <TextInput
-                                                            v-model="entry.title"
-                                                            type="text"
-                                                            class="block w-full text-xs"
-                                                            placeholder="e.g. Development of Standards..."
-                                                            :required="entry.enabled"
-                                                        />
-                                                        <div class="mt-2 flex items-center justify-between gap-2 text-[10px] text-slate-500">
-                                                            <label class="inline-flex items-center gap-1">
-                                                                <input
-                                                                    v-model="entry.enabled"
-                                                                    type="checkbox"
-                                                                    class="rounded border-slate-300 text-blue-600 shadow-sm"
-                                                                />
-                                                                Include
-                                                            </label>
-                                                            <span>
-                                                                Σ wt: <strong>{{ entryWeightTotal(entry) }}%</strong>
-                                                            </span>
-                                                        </div>
-                                                        <div class="mt-2 flex flex-wrap gap-1">
-                                                            <button
-                                                                type="button"
-                                                                class="inline-flex items-center rounded border border-blue-200 bg-blue-50 px-2 py-1 text-[10px] font-semibold text-blue-700 hover:bg-blue-100"
-                                                                @click="addItemRow(eIdx)"
-                                                            >
-                                                                + Add row
-                                                            </button>
-                                                            <button
-                                                                v-if="coreEntries.length > 1"
-                                                                type="button"
-                                                                class="inline-flex items-center rounded border border-rose-200 bg-rose-50 px-2 py-1 text-[10px] font-semibold text-rose-700 hover:bg-rose-100"
-                                                                @click="removeFunctionEntry(eIdx)"
-                                                            >
-                                                                − Remove function
-                                                            </button>
-                                                        </div>
-                                                    </td>
-                                                    <td class="border border-slate-300 px-2 py-1 align-top">
-                                                        <textarea
-                                                            v-model="item.description"
-                                                            rows="3"
-                                                            class="block w-full rounded-md border-gray-300 text-xs shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                                                            placeholder="One indicator per line"
-                                                        />
-                                                    </td>
-                                                    <td class="border border-slate-300 px-2 py-1 align-top">
-                                                        <TextInput
-                                                            v-model="item.weight"
-                                                            type="number"
-                                                            step="0.01"
-                                                            min="0"
-                                                            max="100"
-                                                            class="block w-full text-xs"
-                                                            :required="entry.enabled"
-                                                        />
-                                                    </td>
-                                                    <td class="border border-slate-300 px-2 py-1 align-top">
-                                                        <TextInput
-                                                            v-model="item.annual_office_target"
-                                                            type="text"
-                                                            class="block w-full text-xs"
-                                                            placeholder="e.g. 60 or 100%"
-                                                        />
-                                                    </td>
-                                                    <td class="border border-slate-300 px-2 py-1 align-top">
-                                                        <TextInput
-                                                            v-model="item.individual_annual_targets"
-                                                            type="text"
-                                                            class="block w-full text-xs"
-                                                        />
-                                                    </td>
-                                                    <td class="border border-slate-300 px-1 py-1 text-center align-top">
-                                                        <button
-                                                            v-if="entry.items.length > 1"
-                                                            type="button"
-                                                            class="inline-flex h-6 w-6 items-center justify-center rounded-full border border-rose-200 bg-rose-50 text-sm font-bold text-rose-700 hover:bg-rose-100"
-                                                            title="Remove this row"
-                                                            @click="removeItemRow(eIdx, iIdx)"
-                                                        >
-                                                            ×
-                                                        </button>
-                                                    </td>
-                                                </tr>
-                                            </template>
-                                        </template>
-                                        <tr class="bg-blue-50/40">
-                                            <td colspan="6" class="border border-slate-300 px-2 py-2 text-center">
-                                                <button
-                                                    type="button"
-                                                    class="inline-flex items-center rounded-md border border-blue-300 bg-white px-3 py-1.5 text-[11px] font-semibold text-blue-700 shadow-sm hover:bg-blue-50"
-                                                    @click="addFunctionEntry('core')"
-                                                >
-                                                    + Add Core Function
-                                                </button>
-                                            </td>
-                                        </tr>
-
-                                        <tr class="bg-amber-50">
-                                            <td
-                                                colspan="6"
-                                                class="border border-slate-300 px-2 py-1 text-center text-[11px] font-bold uppercase tracking-wide"
-                                                :class="sectionWeightTotal('strategic') > sectionCap('strategic') + 0.01
-                                                    ? 'bg-rose-100 text-rose-900'
-                                                    : 'text-amber-900'"
-                                            >
-                                                Strategic Functions · Shared cap {{ sectionCap('strategic') }}% —
-                                                Σ <strong>{{ sectionWeightTotal('strategic') }}%</strong> used ·
-                                                <span :class="sectionRemaining('strategic') === 0 ? 'text-emerald-700' : ''">
-                                                    {{ sectionRemaining('strategic') }}% remaining
-                                                </span>
-                                                <span v-if="sectionWeightTotal('strategic') > sectionCap('strategic') + 0.01">
-                                                    · OVER BY {{ (sectionWeightTotal('strategic') - sectionCap('strategic')).toFixed(2) }}%
-                                                </span>
-                                            </td>
-                                        </tr>
-                                        <template v-for="({ entry, idx: eIdx }) in strategicEntries" :key="'strat-' + eIdx">
-                                            <template v-for="(item, iIdx) in entry.items" :key="item._uid">
-                                                <tr :class="entry.enabled ? '' : 'opacity-50'">
-                                                    <td
-                                                        v-if="iIdx === 0"
-                                                        :rowspan="entry.items.length"
-                                                        class="border border-slate-300 px-2 py-1 align-top"
-                                                    >
-                                                        <TextInput
-                                                            v-model="entry.title"
-                                                            type="text"
-                                                            class="block w-full text-xs"
-                                                            placeholder="e.g. Strategic Project..."
-                                                            :required="entry.enabled"
-                                                        />
-                                                        <div class="mt-2 flex items-center justify-between gap-2 text-[10px] text-slate-500">
-                                                            <label class="inline-flex items-center gap-1">
-                                                                <input
-                                                                    v-model="entry.enabled"
-                                                                    type="checkbox"
-                                                                    class="rounded border-slate-300 text-blue-600 shadow-sm"
-                                                                />
-                                                                Include
-                                                            </label>
-                                                            <span>
-                                                                Σ wt: <strong>{{ entryWeightTotal(entry) }}%</strong>
-                                                            </span>
-                                                        </div>
-                                                        <div class="mt-2 flex flex-wrap gap-1">
-                                                            <button
-                                                                type="button"
-                                                                class="inline-flex items-center rounded border border-amber-200 bg-amber-50 px-2 py-1 text-[10px] font-semibold text-amber-800 hover:bg-amber-100"
-                                                                @click="addItemRow(eIdx)"
-                                                            >
-                                                                + Add row
-                                                            </button>
-                                                            <button
-                                                                v-if="strategicEntries.length > 1"
-                                                                type="button"
-                                                                class="inline-flex items-center rounded border border-rose-200 bg-rose-50 px-2 py-1 text-[10px] font-semibold text-rose-700 hover:bg-rose-100"
-                                                                @click="removeFunctionEntry(eIdx)"
-                                                            >
-                                                                − Remove function
-                                                            </button>
-                                                        </div>
-                                                    </td>
-                                                    <td class="border border-slate-300 px-2 py-1 align-top">
-                                                        <textarea
-                                                            v-model="item.description"
-                                                            rows="3"
-                                                            class="block w-full rounded-md border-gray-300 text-xs shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                                                            placeholder="One indicator per line"
-                                                        />
-                                                    </td>
-                                                    <td class="border border-slate-300 px-2 py-1 align-top">
-                                                        <TextInput
-                                                            v-model="item.weight"
-                                                            type="number"
-                                                            step="0.01"
-                                                            min="0"
-                                                            max="100"
-                                                            class="block w-full text-xs"
-                                                            :required="entry.enabled"
-                                                        />
-                                                    </td>
-                                                    <td class="border border-slate-300 px-2 py-1 align-top">
-                                                        <TextInput
-                                                            v-model="item.annual_office_target"
-                                                            type="text"
-                                                            class="block w-full text-xs"
-                                                        />
-                                                    </td>
-                                                    <td class="border border-slate-300 px-2 py-1 align-top">
-                                                        <TextInput
-                                                            v-model="item.individual_annual_targets"
-                                                            type="text"
-                                                            class="block w-full text-xs"
-                                                        />
-                                                    </td>
-                                                    <td class="border border-slate-300 px-1 py-1 text-center align-top">
-                                                        <button
-                                                            v-if="entry.items.length > 1"
-                                                            type="button"
-                                                            class="inline-flex h-6 w-6 items-center justify-center rounded-full border border-rose-200 bg-rose-50 text-sm font-bold text-rose-700 hover:bg-rose-100"
-                                                            title="Remove this row"
-                                                            @click="removeItemRow(eIdx, iIdx)"
-                                                        >
-                                                            ×
-                                                        </button>
-                                                    </td>
-                                                </tr>
-                                            </template>
-                                        </template>
-                                        <tr class="bg-amber-50/40">
-                                            <td colspan="6" class="border border-slate-300 px-2 py-2 text-center">
-                                                <button
-                                                    type="button"
-                                                    class="inline-flex items-center rounded-md border border-amber-300 bg-white px-3 py-1.5 text-[11px] font-semibold text-amber-800 shadow-sm hover:bg-amber-50"
-                                                    @click="addFunctionEntry('strategic')"
-                                                >
-                                                    + Add Strategic Function
-                                                </button>
-                                            </td>
-                                        </tr>
-                                    </tbody>
-                                </table>
-                            </div>
-
-                            <p class="text-[11px] text-slate-500">
-                                Note: the <strong>Accomplishments</strong> (Q3/Q4 target & actual, %) and the <strong>Rating</strong> (Q, E, T, Average)
-                                columns are filled by your supervisor during evaluation.
-                            </p>
-
-                            <EvidencePanel
-                                embedded
-                                compact
-                                form-heading="Evidence (optional)"
-                                v-model:title="commitmentForm.evidence.title"
-                                v-model:description="commitmentForm.evidence.description"
-                                v-model:files="commitmentForm.evidence.files"
+                        <form class="mt-6" @submit.prevent="submitNewCommitment">
+                            <CommitmentPackageForm
+                                v-model:entries="commitmentForm.entries"
+                                v-model:evidence="commitmentForm.evidence"
+                                :weight-summary="weightSummary"
+                                :errors="commitmentForm.errors"
+                                :processing="commitmentForm.processing"
+                                show-evidence
+                                submit-label="Save commitments"
+                                @submit="submitNewCommitment"
+                                @cancel="closeCreateCommitmentPanel"
                             />
-
-                            <InputError class="mt-2" :message="commitmentForm.errors.entries" />
-
-                            <div
-                                v-if="commitmentErrorList.length"
-                                class="rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs text-rose-900"
-                            >
-                                <p class="font-semibold">Couldn't save — please fix these fields:</p>
-                                <ul class="mt-2 list-disc space-y-1 pl-5">
-                                    <li v-for="(msg, key) in commitmentErrorList" :key="key">{{ msg }}</li>
-                                </ul>
-                            </div>
-
-                            <div class="flex flex-wrap gap-2 border-t border-slate-100 pt-4">
-                                <PrimaryButton type="submit" :disabled="commitmentForm.processing">
-                                    {{ commitmentForm.processing ? 'Saving…' : 'Save commitments' }}
-                                </PrimaryButton>
-                                <SecondaryButton type="button" :disabled="commitmentForm.processing" @click="closeCreateCommitmentPanel">Cancel</SecondaryButton>
-                            </div>
                         </form>
                     </div>
 
@@ -895,12 +555,15 @@ function indicatorLines(c) {
                     <div
                         v-for="g in groupedCommitments"
                         :key="g.key"
-                        class="flex flex-col gap-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm sm:flex-row sm:items-start sm:justify-between"
+                        class="flex flex-col gap-4 rounded-xl border bg-white p-5 shadow-sm sm:flex-row sm:items-start sm:justify-between"
+                        :class="g.status === 'returned'
+                            ? 'border-amber-300 ring-1 ring-amber-100'
+                            : 'border-slate-200'"
                     >
                         <div class="min-w-0 flex-1">
                             <div class="flex flex-wrap items-center gap-2">
                                 <h4 class="text-base font-semibold text-slate-900">
-                                    Commitment package
+                                    {{ packageCardTitle(g) }}
                                     <span v-if="g.created_at" class="ml-1 text-xs font-normal text-slate-500">
                                         · saved {{ formatBatchDate(g.created_at) }}
                                     </span>
@@ -911,6 +574,9 @@ function indicatorLines(c) {
                             </div>
                             <p class="mt-1 text-sm text-slate-500">
                                 {{ g.period_label }}
+                                <span v-if="g.has_core && g.has_strategic" class="font-medium text-slate-600">
+                                    · Core + Strategic
+                                </span>
                                 · {{ g.functions.length }} function{{ g.functions.length === 1 ? '' : 's' }}
                                 · {{ g.items.length }} indicator{{ g.items.length === 1 ? '' : 's' }}
                                 · Σ Weight <strong>{{ g.total_weight.toFixed(2) }}%</strong>
@@ -947,7 +613,7 @@ function indicatorLines(c) {
                                 class="!bg-blue-600 hover:!bg-blue-700"
                                 @click="router.visit(route('employee.commitments.show', g.first_id))"
                             >
-                                View →
+                                {{ packageIsEditable(g.status) ? 'Edit →' : 'View →' }}
                             </PrimaryButton>
                         </div>
                     </div>
@@ -1041,26 +707,29 @@ function indicatorLines(c) {
                                                 <td v-if="li === 0" :rowspan="indicatorLines(c).length" class="border border-slate-300 px-2 py-1 text-center">{{ Number(c.weight) }}%</td>
                                                 <td v-if="li === 0" :rowspan="indicatorLines(c).length" class="border border-slate-300 px-2 py-1 text-center">{{ c.annual_office_target ?? '—' }}</td>
                                                 <td v-if="li === 0" :rowspan="indicatorLines(c).length" class="border border-slate-300 px-2 py-1 text-center">{{ c.individual_annual_targets ?? '—' }}</td>
-                                                <td v-if="li === 0" :rowspan="indicatorLines(c).length" class="border border-slate-300 px-2 py-1 text-center">{{ c.rating_q3_target ?? '—' }}</td>
-                                                <td v-if="li === 0" :rowspan="indicatorLines(c).length" class="border border-slate-300 px-2 py-1 text-center">{{ c.rating_q3_actual ?? '—' }}</td>
-                                                <td v-if="li === 0" :rowspan="indicatorLines(c).length" class="border border-slate-300 px-2 py-1 text-center">{{ c.rating_q4_target ?? '—' }}</td>
-                                                <td v-if="li === 0" :rowspan="indicatorLines(c).length" class="border border-slate-300 px-2 py-1 text-center">{{ c.rating_q4_actual ?? '—' }}</td>
-                                                <td v-if="li === 0" :rowspan="indicatorLines(c).length" class="border border-slate-300 px-2 py-1 text-center">{{ c.rating_target_total ?? '—' }}</td>
-                                                <td v-if="li === 0" :rowspan="indicatorLines(c).length" class="border border-slate-300 px-2 py-1 text-center">{{ c.rating_actual_total ?? '—' }}</td>
+                                                <td v-if="li === 0" :rowspan="indicatorLines(c).length" class="border border-slate-300 px-2 py-1 text-center">{{ formatWholeNumber(c.rating_q3_target) }}</td>
+                                                <td v-if="li === 0" :rowspan="indicatorLines(c).length" class="border border-slate-300 px-2 py-1 text-center">{{ formatWholeNumber(c.rating_q3_actual) }}</td>
+                                                <td v-if="li === 0" :rowspan="indicatorLines(c).length" class="border border-slate-300 px-2 py-1 text-center">{{ formatWholeNumber(c.rating_q4_target) }}</td>
+                                                <td v-if="li === 0" :rowspan="indicatorLines(c).length" class="border border-slate-300 px-2 py-1 text-center">{{ formatWholeNumber(c.rating_q4_actual) }}</td>
+                                                <td v-if="li === 0" :rowspan="indicatorLines(c).length" class="border border-slate-300 px-2 py-1 text-center">{{ formatWholeNumber(c.rating_target_total) }}</td>
+                                                <td v-if="li === 0" :rowspan="indicatorLines(c).length" class="border border-slate-300 px-2 py-1 text-center">{{ formatWholeNumber(c.rating_actual_total) }}</td>
                                                 <td v-if="li === 0" :rowspan="indicatorLines(c).length" class="border border-slate-300 px-2 py-1 text-center">{{ c.rating_percent != null ? (Number(c.rating_percent) * 100).toFixed(0) + '%' : '—' }}</td>
                                                 <td v-if="li === 0" :rowspan="indicatorLines(c).length" class="border border-slate-300 px-2 py-1 text-center">{{ c.rating_quality ?? '—' }}</td>
                                                 <td v-if="li === 0" :rowspan="indicatorLines(c).length" class="border border-slate-300 px-2 py-1 text-center">{{ c.rating_efficiency ?? '—' }}</td>
                                                 <td v-if="li === 0" :rowspan="indicatorLines(c).length" class="border border-slate-300 px-2 py-1 text-center">{{ c.rating_timeliness ?? '—' }}</td>
-                                                <td v-if="li === 0" :rowspan="indicatorLines(c).length" class="border border-slate-300 px-2 py-1 text-center">{{ c.rating_average ?? '—' }}</td>
-                                                <td v-if="li === 0" :rowspan="indicatorLines(c).length" class="border border-slate-300 px-2 py-1 text-center">{{ c.remarks ?? (c.rating_weighted ?? '—') }}</td>
+                                                <td v-if="li === 0" :rowspan="indicatorLines(c).length" class="border border-slate-300 px-2 py-1 text-center">{{ formatAverage(c) }}</td>
+                                                <td v-if="li === 0" :rowspan="indicatorLines(c).length" class="border border-slate-300 px-2 py-1 text-center">{{ formatWeighted(c) }}</td>
                                             </tr>
                                         </template>
                                     </template>
                                     <tr class="bg-slate-100 font-semibold">
                                         <td class="border border-slate-300 px-2 py-1 text-right" colspan="2">TOTAL</td>
                                         <td class="border border-slate-300 px-2 py-1 text-center">{{ historyTotals(s).weight }}%</td>
-                                        <td class="border border-slate-300 px-2 py-1" colspan="13"></td>
-                                        <td class="border border-slate-300 px-2 py-1 text-center">{{ historyTotals(s).weighted }}</td>
+                                        <td class="border border-slate-300 px-2 py-1" colspan="2"></td>
+                                        <td class="border border-slate-300 px-2 py-1" colspan="7"></td>
+                                        <td class="border border-slate-300 px-2 py-1" colspan="3"></td>
+                                        <td class="border border-slate-300 px-2 py-1 text-center">{{ historyTotals(s).average }}</td>
+                                        <td class="border border-slate-300 px-2 py-1 text-center text-amber-800">{{ historyTotals(s).weighted }}</td>
                                     </tr>
                                     <tr class="bg-amber-50 font-semibold text-amber-900">
                                         <td class="border border-slate-300 px-2 py-1 text-right" colspan="2">FINAL AVERAGE RATING</td>

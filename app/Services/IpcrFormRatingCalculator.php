@@ -6,28 +6,55 @@ namespace App\Services;
  * IPCR Form 1 style ratings (CHED sample workbook):
  * - Accomplishment ratio N = total_actual / total_target, where totals are from Q3+Q4.
  * - If Q3/Q4 target-actual values are not provided, progress% may be used as fallback.
- * - Quality (Q) is derived from N using fixed thresholds (130%, 115%, 100%, 51%).
- * - Efficiency (E) and Timeliness (T) are entered by the rater (1–5).
+ * - Quality (Q), Efficiency (E), and Timeliness (T) default from N using fixed thresholds but may be overridden by the rater.
  * - Average R = (Q + E + T) / 3.
- * - Weighted score ("Remarks" column in sample) S = R × (row_weight_as_fraction), weight% / 100.
- * - Overall package score = sum(S) when commitment weights sum to 100%.
+ * - Weighted score (Remarks column) = Average × (Weight% ÷ 100).
+ * - TOTAL row Remarks = sum of weighted scores; FINAL AVERAGE RATING = same total.
  */
 final class IpcrFormRatingCalculator
 {
     /**
-     * @return array{target_total: float, actual_total: float, percent: float}
+     * @return array{target_total: ?float, actual_total: ?float, percent: ?float}
      */
-    public static function totalsFromQ3Q4(float $q3Target, float $q3Actual, float $q4Target, float $q4Actual): array
-    {
-        $targetTotal = max(0.0, $q3Target + $q4Target);
-        $actualTotal = max(0.0, $q3Actual + $q4Actual);
-        $percent = $targetTotal > 0 ? ($actualTotal / $targetTotal) : 0.0;
+    public static function totalsFromQ3Q4(
+        ?float $q3Target,
+        ?float $q3Actual,
+        ?float $q4Target,
+        ?float $q4Actual,
+    ): array {
+        if ($q3Target === null && $q3Actual === null && $q4Target === null && $q4Actual === null) {
+            return [
+                'target_total' => null,
+                'actual_total' => null,
+                'percent' => null,
+            ];
+        }
+
+        $targetTotal = max(0.0, ($q3Target ?? 0.0) + ($q4Target ?? 0.0));
+        $actualTotal = max(0.0, ($q3Actual ?? 0.0) + ($q4Actual ?? 0.0));
+        $percent = $targetTotal > 0 ? ($actualTotal / $targetTotal) : null;
 
         return [
             'target_total' => round($targetTotal, 4),
             'actual_total' => round($actualTotal, 4),
-            'percent' => round($percent, 6),
+            'percent' => $percent !== null ? round($percent, 6) : null,
         ];
+    }
+
+    public static function nullableDecimal(mixed $value): ?float
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        return (float) $value;
+    }
+
+    public static function nullableWholeNumber(mixed $value): ?float
+    {
+        $decimal = self::nullableDecimal($value);
+
+        return $decimal !== null ? (float) round($decimal) : null;
     }
 
     public static function accomplishmentRatio(?float $actual, ?float $target, int $progress): float
@@ -58,6 +85,40 @@ final class IpcrFormRatingCalculator
     }
 
     /**
+     * @return array{quality: int, efficiency: int, timeliness: int, average: float, weighted: float}
+     */
+    public static function scoreRowFromRatings(
+        int $quality,
+        int $efficiency,
+        int $timeliness,
+        float $weightPercent,
+    ): array {
+        $average = ($quality + $efficiency + $timeliness) / 3.0;
+
+        return [
+            'quality' => $quality,
+            'efficiency' => $efficiency,
+            'timeliness' => $timeliness,
+            'average' => round($average, 4),
+            'weighted' => self::weightedFromAverageAndWeight($average, $weightPercent),
+        ];
+    }
+
+    /**
+     * @return array{quality: int, efficiency: int, timeliness: int, average: float, weighted: float}
+     */
+    public static function scoreRowFromAccomplishment(float $weightPercent, float $accomplishmentRatio): array
+    {
+        $rating = self::qualityFromAccomplishmentRatio($accomplishmentRatio);
+
+        return [
+            ...self::scoreRow($rating, $rating, $weightPercent, $accomplishmentRatio, $rating),
+            'efficiency' => $rating,
+            'timeliness' => $rating,
+        ];
+    }
+
+    /**
      * @return array{quality: int, average: float, weighted: float}
      */
     public static function scoreRow(
@@ -65,16 +126,23 @@ final class IpcrFormRatingCalculator
         int $timeliness,
         float $weightPercent,
         float $accomplishmentRatio,
+        ?int $quality = null,
     ): array {
-        $quality = self::qualityFromAccomplishmentRatio($accomplishmentRatio);
+        $quality = $quality ?? self::qualityFromAccomplishmentRatio($accomplishmentRatio);
         $average = ($quality + $efficiency + $timeliness) / 3.0;
-        $w = max(0.0, $weightPercent / 100.0);
-        $weighted = round($average * $w, 6);
+        $weighted = self::weightedFromAverageAndWeight($average, $weightPercent);
 
         return [
             'quality' => $quality,
             'average' => round($average, 4),
             'weighted' => $weighted,
         ];
+    }
+
+    public static function weightedFromAverageAndWeight(float $average, float $weightPercent): float
+    {
+        $w = max(0.0, $weightPercent / 100.0);
+
+        return round($average * $w, 4);
     }
 }
