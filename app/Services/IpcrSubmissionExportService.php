@@ -32,6 +32,13 @@ final class IpcrSubmissionExportService
         return self::loadApprovedSubmission($submission);
     }
 
+    public static function authorizeEmployeeExport(Request $request, IpcrSubmission $submission): IpcrSubmission
+    {
+        abort_unless($submission->employee_id === $request->user()->id, 403);
+
+        return self::loadApprovedSubmission($submission);
+    }
+
     private static function loadApprovedSubmission(IpcrSubmission $submission): IpcrSubmission
     {
         abort_unless($submission->status === SubmissionStatus::Approved, 422);

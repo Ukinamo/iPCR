@@ -22,6 +22,10 @@ defineProps({
         type: Object,
         default: () => ({}),
     },
+    pendingTransferCount: {
+        type: Number,
+        default: 0,
+    },
 });
 
 const tab = ref('users');
@@ -94,6 +98,20 @@ function destroyUser(id) {
                             </span>
                         </div>
                     </div>
+                </div>
+
+                <div v-if="pendingTransferCount > 0" class="flex items-start gap-3 rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-950">
+                    <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-100 text-blue-700">
+                        <AppIcon name="users" class="h-5 w-5" />
+                    </span>
+                    <p>
+                        <span class="font-semibold">{{ pendingTransferCount }} supervisor transfer request(s)</span>
+                        need your approval.
+                        <Link :href="route('admin.transfer-requests.index')" class="ml-1 inline-flex items-center gap-1 font-semibold text-blue-900 underline hover:text-blue-950">
+                            Review transfers
+                            <AppIcon name="arrow-top-right" class="h-3.5 w-3.5" />
+                        </Link>
+                    </p>
                 </div>
 
                 <div v-if="stats.pendingRegistrations > 0" class="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">

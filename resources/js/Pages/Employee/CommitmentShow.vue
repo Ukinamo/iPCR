@@ -1,5 +1,7 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import AppIcon from '@/Components/AppIcon.vue';
+import CommitmentIpcrTable from '@/Components/CommitmentIpcrTable.vue';
 import CommitmentPackageForm from '@/Components/CommitmentPackageForm.vue';
 import EvidencePanel from '@/Components/EvidencePanel.vue';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
@@ -39,7 +41,7 @@ function newEmptyEntry(type) {
             _uid: Date.now() + Math.random(),
             id: null,
             description: '',
-            weight: 0,
+            weight: null,
             annual_office_target: '',
             individual_annual_targets: '',
         }],
@@ -64,7 +66,7 @@ function commitmentsToEntries(rows) {
             id: c.id,
             _uid: c.id,
             description: c.description ?? '',
-            weight: Number(c.weight),
+            weight: c.weight != null ? Number(c.weight) : null,
             annual_office_target: c.annual_office_target ?? '',
             individual_annual_targets: c.individual_annual_targets ?? '',
         });
@@ -115,7 +117,7 @@ function submitPackage() {
                 function_type: e.function_type,
                 title: e.title,
                 description: it.description,
-                weight: it.weight,
+                weight: it.weight === '' || it.weight == null ? null : it.weight,
                 annual_office_target: it.annual_office_target,
                 individual_annual_targets: it.individual_annual_targets,
             })),
@@ -134,31 +136,6 @@ function submitPackage() {
         preserveScroll: true,
     });
 }
-
-const functionBlocks = computed(() => {
-    const order = { core: 0, strategic: 1 };
-    const map = new Map();
-    for (const c of props.commitments || []) {
-        const key = `${c.function_type}|${c.title}`;
-        if (!map.has(key)) {
-            map.set(key, {
-                function_type: c.function_type,
-                title: c.title,
-                items: [],
-                weight_total: 0,
-            });
-        }
-        const block = map.get(key);
-        block.items.push(c);
-        block.weight_total += Number(c.weight || 0);
-    }
-    return Array.from(map.values()).sort((a, b) => {
-        const ta = order[a.function_type] ?? 9;
-        const tb = order[b.function_type] ?? 9;
-        if (ta !== tb) return ta - tb;
-        return (a.title || '').localeCompare(b.title || '');
-    });
-});
 
 const packageEvidence = computed(() => {
     const list = [];
@@ -230,9 +207,10 @@ function destroyEvidence(id) {
         <template #header>
             <Link
                 :href="route('dashboard')"
-                class="text-sm font-medium text-slate-500 hover:text-slate-800"
+                class="inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 hover:text-slate-800"
             >
-                ← Back to dashboard
+                <AppIcon name="arrow-left" class="h-4 w-4" />
+                Back to dashboard
             </Link>
         </template>
 
@@ -240,19 +218,24 @@ function destroyEvidence(id) {
             <div class="mx-auto max-w-6xl space-y-6 sm:px-6 lg:px-8">
                 <div class="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
                     <div class="flex flex-wrap items-start justify-between gap-3">
-                        <div class="min-w-0 flex-1">
-                            <h2 class="text-xl font-semibold text-slate-900">
-                                {{ canManagePackage ? 'Edit commitment package' : 'Commitment package' }}
-                            </h2>
-                            <p class="mt-1 text-sm text-slate-500">
-                                {{ group.period_label }}
-                                · {{ group.total_functions }} function{{ group.total_functions === 1 ? '' : 's' }}
-                                · {{ group.total_indicators }} indicator{{ group.total_indicators === 1 ? '' : 's' }}
-                                · Σ Weight <strong>{{ Number(group.total_weight).toFixed(2) }}%</strong>
-                            </p>
-                            <p v-if="group.created_at" class="mt-0.5 text-xs text-slate-500">
-                                Saved {{ new Date(group.created_at).toLocaleString() }}
-                            </p>
+                        <div class="flex min-w-0 flex-1 items-start gap-3">
+                            <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-indigo-100 text-indigo-700">
+                                <AppIcon :name="canManagePackage ? 'pencil' : 'clipboard'" class="h-5 w-5" />
+                            </span>
+                            <div class="min-w-0 flex-1">
+                                <h2 class="text-xl font-semibold text-slate-900">
+                                    {{ canManagePackage ? 'Edit commitment package' : 'Commitment package' }}
+                                </h2>
+                                <p class="mt-1 text-sm text-slate-500">
+                                    {{ group.period_label }}
+                                    · {{ group.total_functions }} function{{ group.total_functions === 1 ? '' : 's' }}
+                                    · {{ group.total_indicators }} indicator{{ group.total_indicators === 1 ? '' : 's' }}
+                                    · Σ Weight <strong>{{ Number(group.total_weight).toFixed(2) }}%</strong>
+                                </p>
+                                <p v-if="group.created_at" class="mt-0.5 text-xs text-slate-500">
+                                    Saved {{ new Date(group.created_at).toLocaleString() }}
+                                </p>
+                            </div>
                         </div>
                         <span class="rounded-full px-3 py-1 text-xs font-semibold ring-1" :class="statusBadge(packageStatus)">
                             {{ packageStatus.replace('_', ' ') }}
@@ -262,17 +245,28 @@ function destroyEvidence(id) {
 
                 <div
                     v-if="submission?.status === 'returned' && submission?.supervisor_feedback"
-                    class="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950"
+                    class="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950"
                 >
-                    <p class="font-semibold text-amber-900">Supervisor comments</p>
-                    <p class="mt-2 whitespace-pre-wrap text-amber-950/90">{{ submission.supervisor_feedback }}</p>
-                    <p class="mt-2 text-xs text-amber-800">Update your commitments below, then submit again from the dashboard when ready.</p>
+                    <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-amber-100 text-amber-700">
+                        <AppIcon name="exclamation-triangle" class="h-4 w-4" />
+                    </span>
+                    <div>
+                        <p class="font-semibold text-amber-900">Supervisor comments</p>
+                        <p class="mt-2 whitespace-pre-wrap text-amber-950/90">{{ submission.supervisor_feedback }}</p>
+                        <p class="mt-2 text-xs text-amber-800">Update your commitments below, then submit again from the dashboard when ready.</p>
+                    </div>
                 </div>
 
                 <div
                     v-if="canManagePackage"
                     class="rounded-xl border-2 border-blue-200 bg-white p-6 shadow-lg ring-1 ring-blue-100"
                 >
+                    <div class="mb-4 flex items-center gap-2 border-b border-slate-100 pb-4">
+                        <span class="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-100 text-blue-700">
+                            <AppIcon name="pencil" class="h-4 w-4" />
+                        </span>
+                        <p class="text-sm font-semibold text-slate-800">Edit commitments</p>
+                    </div>
                     <CommitmentPackageForm
                         v-model:entries="packageForm.entries"
                         :weight-summary="weightSummary"
@@ -284,63 +278,23 @@ function destroyEvidence(id) {
                     />
                 </div>
 
-                <template v-else>
-                    <div
-                        v-for="(block, bIdx) in functionBlocks"
-                        :key="bIdx"
-                        class="rounded-xl border border-slate-200 bg-white shadow-sm"
-                    >
-                        <div
-                            class="flex flex-wrap items-center justify-between gap-2 border-b px-5 py-3"
-                            :class="block.function_type === 'core'
-                                ? 'bg-blue-50 border-blue-100'
-                                : 'bg-amber-50 border-amber-100'"
-                        >
-                            <div class="flex flex-wrap items-center gap-2">
-                                <span
-                                    class="rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide"
-                                    :class="block.function_type === 'core'
-                                        ? 'bg-blue-100 text-blue-800'
-                                        : 'bg-amber-100 text-amber-800'"
-                                >
-                                    {{ block.function_type }}
-                                </span>
-                                <h3 class="text-sm font-semibold text-slate-900">
-                                    {{ block.title || '(untitled function)' }}
-                                </h3>
-                            </div>
-                            <p class="text-xs text-slate-600">
-                                {{ block.items.length }} indicator{{ block.items.length === 1 ? '' : 's' }}
-                                · Σ Weight <strong>{{ block.weight_total.toFixed(2) }}%</strong>
-                            </p>
-                        </div>
-
-                        <div class="overflow-x-auto">
-                            <table class="min-w-full border-collapse text-xs">
-                                <thead class="bg-slate-50 text-[11px] font-semibold text-slate-700">
-                                    <tr>
-                                        <th class="border border-slate-200 px-2 py-2 text-center" style="min-width: 300px">
-                                            Services / Programs / Projects / Indicators
-                                        </th>
-                                        <th class="border border-slate-200 px-2 py-2 text-center" style="min-width: 72px">Weight</th>
-                                        <th class="border border-slate-200 px-2 py-2 text-center" style="min-width: 120px">Annual Office Target</th>
-                                        <th class="border border-slate-200 px-2 py-2 text-center" style="min-width: 140px">Individual Annual Targets</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <tr v-for="c in block.items" :key="c.id">
-                                        <td class="border border-slate-200 px-2 py-2 align-top whitespace-pre-line">{{ c.description || '—' }}</td>
-                                        <td class="border border-slate-200 px-2 py-2 text-right align-top">{{ Number(c.weight).toFixed(2) }}%</td>
-                                        <td class="border border-slate-200 px-2 py-2 align-top">{{ c.annual_office_target || '—' }}</td>
-                                        <td class="border border-slate-200 px-2 py-2 align-top">{{ c.individual_annual_targets || '—' }}</td>
-                                    </tr>
-                                </tbody>
-                            </table>
-                        </div>
+                <div v-else class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+                    <div class="mb-4 flex items-center gap-2">
+                        <span class="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
+                            <AppIcon name="clipboard" class="h-4 w-4" />
+                        </span>
+                        <p class="text-sm font-semibold text-slate-800">IPCR commitment table</p>
                     </div>
-                </template>
+                    <CommitmentIpcrTable :commitments="commitments" />
+                </div>
 
                 <div class="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+                    <div class="mb-4 flex items-center gap-2">
+                        <span class="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700">
+                            <AppIcon name="paper-clip" class="h-4 w-4" />
+                        </span>
+                        <p class="text-sm font-semibold text-slate-800">Supporting evidence</p>
+                    </div>
                     <EvidencePanel
                         :items="packageEvidence"
                         :editable="canManagePackage"
@@ -357,7 +311,10 @@ function destroyEvidence(id) {
 
                 <div v-if="canManagePackage" class="flex justify-end">
                     <PrimaryButton type="button" @click="router.visit(route('dashboard'))">
-                        Back to dashboard to submit
+                        <span class="inline-flex items-center gap-1.5">
+                            <AppIcon name="arrow-top-right" class="h-4 w-4" />
+                            Back to dashboard to submit
+                        </span>
                     </PrimaryButton>
                 </div>
             </div>

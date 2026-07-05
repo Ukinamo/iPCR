@@ -111,8 +111,8 @@ final class CommitmentWeightRules
 
     private static function totalsFromCollection(Collection $rows): array
     {
-        $core = (float) $rows->where('function_type', 'core')->sum('weight');
-        $strategic = (float) $rows->where('function_type', 'strategic')->sum('weight');
+        $core = (float) $rows->where('function_type', 'core')->sum(fn ($row) => $row->weight ?? 0);
+        $strategic = (float) $rows->where('function_type', 'strategic')->sum(fn ($row) => $row->weight ?? 0);
 
         return [
             'core' => round($core, 2),

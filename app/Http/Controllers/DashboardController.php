@@ -3,12 +3,16 @@
 namespace App\Http\Controllers;
 
 use App\Enums\CommitmentStatus;
+use App\Enums\ReviewTransferRequestStatus;
 use App\Enums\SubmissionStatus;
 use App\Enums\UserRole;
 use App\Models\Commitment;
+use App\Enums\TransferRequestStatus;
 use App\Models\IpcrSubmission;
-use App\Http\Controllers\Admin\ReportController;
+use App\Models\SubmissionReviewTransferRequest;
+use App\Models\SupervisorTransferRequest;
 use App\Models\User;
+use App\Http\Controllers\Admin\ReportController;
 use App\Services\AdminAnalyticsService;
 use App\Services\CommitmentPeriodGuard;
 use App\Services\CommitmentWeightRules;
@@ -188,7 +192,7 @@ class DashboardController extends Controller
 
         $submissions = IpcrSubmission::query()
             ->with(['employee', 'commitments.accomplishments'])
-            ->whereIn('employee_id', $teamIds)
+            ->where('supervisor_id', $user->id)
             ->orderByDesc('submitted_at')
             ->orderByDesc('id')
             ->take(50)
@@ -201,7 +205,7 @@ class DashboardController extends Controller
             ->count();
 
         $avgRating = (float) IpcrSubmission::query()
-            ->whereIn('employee_id', $teamIds)
+            ->where('supervisor_id', $user->id)
             ->where('status', SubmissionStatus::Approved)
             ->whereNotNull('overall_rating')
             ->avg('overall_rating') ?? 0;
@@ -215,6 +219,34 @@ class DashboardController extends Controller
                 'averageRating' => round($avgRating, 1),
             ],
             'submissions' => $submissions,
+            'teamMembers' => User::query()
+                ->where('supervisor_id', $user->id)
+                ->where('role', UserRole::Employee)
+                ->orderBy('name')
+                ->get(['id', 'name', 'email']),
+            'supervisors' => User::query()
+                ->where('role', UserRole::Supervisor)
+                ->where('id', '!=', $user->id)
+                ->orderBy('name')
+                ->get(['id', 'name', 'email']),
+            'transferRequests' => SupervisorTransferRequest::query()
+                ->with(['employee:id,name,email', 'toSupervisor:id,name'])
+                ->where('requested_by_id', $user->id)
+                ->where('status', TransferRequestStatus::Pending)
+                ->orderByDesc('created_at')
+                ->get(),
+            'incomingReviewTransfers' => SubmissionReviewTransferRequest::query()
+                ->with(['submission.employee:id,name', 'requestedBy:id,name', 'fromSupervisor:id,name', 'toSupervisor:id,name'])
+                ->where('to_supervisor_id', $user->id)
+                ->where('status', ReviewTransferRequestStatus::Pending)
+                ->orderByDesc('created_at')
+                ->get(),
+            'outgoingReviewTransfers' => SubmissionReviewTransferRequest::query()
+                ->with(['submission.employee:id,name', 'toSupervisor:id,name'])
+                ->where('requested_by_id', $user->id)
+                ->where('status', ReviewTransferRequestStatus::Pending)
+                ->orderByDesc('created_at')
+                ->get(),
         ]);
     }
 
@@ -236,6 +268,7 @@ class DashboardController extends Controller
             'approvedRatings' => app(ReportController::class)->approvedSubmissionsList(),
             'reviewMonths' => app(ReportController::class)->approvedReviewMonths(),
             'analytics' => app(AdminAnalyticsService::class)->snapshot(),
+            'pendingTransferCount' => SupervisorTransferRequest::where('status', TransferRequestStatus::Pending)->count(),
             'supervisors' => User::query()
                 ->where('role', UserRole::Supervisor)
                 ->orderBy('name')

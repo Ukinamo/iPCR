@@ -9,6 +9,7 @@ use App\Models\Commitment;
 use App\Models\IpcrSubmission;
 use App\Services\AuditLogger;
 use App\Services\CommitmentWeightRules;
+use App\Services\SupervisorTransferService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
@@ -74,6 +75,8 @@ class SubmissionController extends Controller
         }
 
         AuditLogger::log($user->id, 'ipcr.submitted', $submission, null, $request);
+
+        app(SupervisorTransferService::class)->notifySubmissionSubmitted($submission->fresh(['employee', 'supervisor']));
 
         return back()->with('status', 'Your IPCR package was sent for supervisor review.');
     }

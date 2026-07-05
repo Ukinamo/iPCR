@@ -1,16 +1,64 @@
 <script setup>
+import AppIcon from '@/Components/AppIcon.vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import InputLabel from '@/Components/InputLabel.vue';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
+import ReviewTransferPanel from '@/Components/ReviewTransferPanel.vue';
 import SecondaryButton from '@/Components/SecondaryButton.vue';
-import { Head, Link } from '@inertiajs/vue3';
-import { computed, ref } from 'vue';
+import { Head, Link, router, useForm } from '@inertiajs/vue3';
+import { computed, reactive, ref } from 'vue';
 
 const props = defineProps({
     stats: Object,
     submissions: Array,
+    teamMembers: {
+        type: Array,
+        default: () => [],
+    },
+    supervisors: {
+        type: Array,
+        default: () => [],
+    },
+    transferRequests: {
+        type: Array,
+        default: () => [],
+    },
+    incomingReviewTransfers: {
+        type: Array,
+        default: () => [],
+    },
+    outgoingReviewTransfers: {
+        type: Array,
+        default: () => [],
+    },
 });
 
 const tab = ref('team');
+const transferForms = reactive({});
+const processingCancel = reactive({});
+
+const statCards = [
+    { key: 'teamMembers', label: 'Team Members', icon: 'users', tone: 'bg-sky-100 text-sky-700' },
+    { key: 'approved', label: 'Approved', icon: 'check-badge', tone: 'bg-emerald-100 text-emerald-700' },
+    { key: 'pendingReview', label: 'Pending Review', icon: 'clipboard', tone: 'bg-amber-100 text-amber-700' },
+    { key: 'averageRating', label: 'Average overall', icon: 'star', tone: 'bg-violet-100 text-violet-700' },
+];
+
+const tabs = [
+    { id: 'team', label: 'Submissions', icon: 'clipboard' },
+    { id: 'roster', label: 'My team', icon: 'users' },
+    { id: 'history', label: 'Rating history', icon: 'star' },
+];
+
+props.teamMembers.forEach((member) => {
+    transferForms[member.id] = useForm({
+        employee_id: member.id,
+        to_supervisor_id: '',
+        reason: '',
+    });
+});
+
+const employeesWithPendingTransfer = computed(() => new Set((props.transferRequests || []).map((r) => r.employee_id)));
 
 const activeSubmissions = computed(() =>
     (props.submissions || []).filter((s) => s.status !== 'approved'),
@@ -70,6 +118,23 @@ function reviewButtonLabel(s) {
     if (s.status === 'returned') return 'View package';
     return 'View package';
 }
+
+function submitTransfer(employeeId) {
+    transferForms[employeeId].post(route('supervisor.transfer-requests.store'), {
+        preserveScroll: true,
+        onSuccess: () => {
+            transferForms[employeeId].reset('to_supervisor_id', 'reason');
+        },
+    });
+}
+
+function cancelTransfer(id) {
+    processingCancel[id] = true;
+    router.delete(route('supervisor.transfer-requests.destroy', id), {
+        preserveScroll: true,
+        onFinish: () => { processingCancel[id] = false; },
+    });
+}
 </script>
 
 <template>
@@ -77,63 +142,181 @@ function reviewButtonLabel(s) {
 
     <AuthenticatedLayout>
         <template #header>
-            <div>
-                <h2 class="text-xl font-semibold leading-tight text-gray-800">Welcome, Supervisor</h2>
-                <p class="text-sm text-gray-500">
-                    Rate each commitment using IPCR Form 1 rules: Quality from accomplishment (or progress %), Efficiency and Timeliness (1–5), then
-                    weighted scores sum to the package overall.
-                </p>
+            <div class="flex items-start gap-3">
+                <span class="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-cyan-100 text-cyan-700">
+                    <AppIcon name="briefcase" class="h-5 w-5" />
+                </span>
+                <div>
+                    <h2 class="text-xl font-semibold leading-tight text-gray-800">Supervisor Dashboard</h2>
+                    <p class="text-sm text-gray-500">
+                        Rate each commitment using IPCR Form 1 rules: Quality from accomplishment (or progress %), Efficiency and Timeliness (1–5), then
+                        weighted scores sum to the package overall.
+                    </p>
+                </div>
             </div>
         </template>
 
         <div class="py-8">
             <div class="mx-auto max-w-6xl space-y-6 sm:px-6 lg:px-8">
                 <div class="grid gap-4 md:grid-cols-4">
-                    <div class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-                        <p class="text-sm text-slate-600">Team Members</p>
-                        <p class="mt-2 text-3xl font-bold">{{ stats.teamMembers }}</p>
-                    </div>
-                    <div class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-                        <p class="text-sm text-slate-600">Approved</p>
-                        <p class="mt-2 text-3xl font-bold">{{ stats.approved }}</p>
-                    </div>
-                    <div class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-                        <p class="text-sm text-slate-600">Pending Review</p>
-                        <p class="mt-2 text-3xl font-bold">{{ stats.pendingReview }}</p>
-                        <p v-if="stats.otherActive" class="mt-1 text-xs text-slate-500">{{ stats.otherActive }} returned / draft</p>
-                    </div>
-                    <div class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-                        <p class="text-sm text-slate-600">Average overall</p>
-                        <p class="mt-2 text-3xl font-bold">{{ stats.averageRating }}</p>
+                    <div
+                        v-for="card in statCards"
+                        :key="card.key"
+                        class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
+                    >
+                        <div class="flex items-start justify-between gap-3">
+                            <div>
+                                <p class="text-sm text-slate-600">{{ card.label }}</p>
+                                <p class="mt-2 text-3xl font-bold text-slate-900">{{ stats[card.key] }}</p>
+                                <p v-if="card.key === 'pendingReview' && stats.otherActive" class="mt-1 text-xs text-slate-500">
+                                    {{ stats.otherActive }} returned / draft
+                                </p>
+                            </div>
+                            <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg" :class="card.tone">
+                                <AppIcon :name="card.icon" class="h-5 w-5" />
+                            </span>
+                        </div>
                     </div>
                 </div>
 
-                <div class="flex gap-2 rounded-lg bg-slate-100 p-1 text-sm font-semibold text-slate-600">
-                    <button type="button" class="flex-1 rounded-md px-3 py-2" :class="tab === 'team' ? 'bg-white shadow-sm' : ''" @click="tab = 'team'">
-                        Team Members
-                    </button>
+                <div class="flex flex-wrap gap-2 rounded-lg bg-sky-50/60 p-1 text-sm font-semibold text-slate-700">
                     <button
+                        v-for="item in tabs"
+                        :key="item.id"
                         type="button"
-                        class="flex-1 rounded-md px-3 py-2"
-                        :class="tab === 'history' ? 'bg-white shadow-sm' : ''"
-                        @click="tab = 'history'"
+                        class="inline-flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2 min-w-[9rem]"
+                        :class="tab === item.id ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'"
+                        @click="tab = item.id"
                     >
-                        Rating history
+                        <AppIcon :name="item.icon" class="h-4 w-4 shrink-0" />
+                        {{ item.label }}
                     </button>
+                </div>
+
+                <div v-show="tab === 'roster'" class="space-y-4">
+                    <div class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+                        <div class="flex items-start gap-3">
+                            <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-100 text-blue-700">
+                                <AppIcon name="users" class="h-5 w-5" />
+                            </span>
+                            <div>
+                                <h3 class="text-lg font-semibold text-slate-900">Team roster & transfers</h3>
+                                <p class="mt-1 text-sm text-slate-600">
+                                    Request to transfer an employee to another supervisor. An administrator must approve before the employee is reassigned.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div v-if="transferRequests?.length" class="space-y-3">
+                        <p class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                            <AppIcon name="clock" class="h-3.5 w-3.5" />
+                            Pending transfer requests
+                        </p>
+                        <div v-for="req in transferRequests" :key="req.id" class="rounded-xl border border-amber-200 bg-amber-50/50 p-4">
+                            <div class="flex flex-wrap items-center justify-between gap-3">
+                                <div>
+                                    <p class="font-semibold text-slate-900">{{ req.employee?.name }}</p>
+                                    <p class="text-sm text-slate-600">Transfer to {{ req.to_supervisor?.name }} · awaiting admin approval</p>
+                                </div>
+                                <SecondaryButton type="button" :disabled="processingCancel[req.id]" @click="cancelTransfer(req.id)">
+                                    <span class="inline-flex items-center gap-1.5">
+                                        <AppIcon name="x-mark" class="h-3.5 w-3.5" />
+                                        Cancel request
+                                    </span>
+                                </SecondaryButton>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div v-if="!teamMembers?.length" class="rounded-xl border border-dashed border-slate-200 bg-white p-8 text-center text-sm text-slate-500">
+                        <AppIcon name="users" class="mx-auto h-8 w-8 text-slate-300" />
+                        <p class="mt-3">No employees are currently assigned to you.</p>
+                    </div>
+
+                    <div v-for="member in teamMembers" :key="member.id" class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+                        <div class="flex flex-wrap items-start justify-between gap-3">
+                            <div>
+                                <p class="font-semibold text-slate-900">{{ member.name }}</p>
+                                <p class="text-sm text-slate-600">{{ member.email }}</p>
+                            </div>
+                            <span
+                                v-if="employeesWithPendingTransfer.has(member.id)"
+                                class="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-900 ring-1 ring-amber-100"
+                            >
+                                <AppIcon name="clock" class="h-3 w-3" />
+                                transfer pending
+                            </span>
+                        </div>
+
+                        <form
+                            v-if="!employeesWithPendingTransfer.has(member.id)"
+                            class="mt-4 grid gap-4 md:grid-cols-2"
+                            @submit.prevent="submitTransfer(member.id)"
+                        >
+                            <div>
+                                <InputLabel :for="`supervisor-${member.id}`" value="Transfer to supervisor" />
+                                <select
+                                    :id="`supervisor-${member.id}`"
+                                    v-model="transferForms[member.id].to_supervisor_id"
+                                    class="mt-1 block w-full rounded-md border-slate-300 text-sm shadow-sm"
+                                    required
+                                >
+                                    <option value="">Select supervisor</option>
+                                    <option v-for="s in supervisors" :key="s.id" :value="s.id">{{ s.name }} — {{ s.email }}</option>
+                                </select>
+                                <p v-if="transferForms[member.id].errors.to_supervisor_id" class="mt-1 text-xs text-rose-600">{{ transferForms[member.id].errors.to_supervisor_id }}</p>
+                            </div>
+                            <div>
+                                <InputLabel :for="`reason-${member.id}`" value="Reason (optional)" />
+                                <textarea
+                                    :id="`reason-${member.id}`"
+                                    v-model="transferForms[member.id].reason"
+                                    rows="2"
+                                    class="mt-1 block w-full rounded-md border-slate-300 text-sm shadow-sm"
+                                    placeholder="Why should this employee be reassigned?"
+                                />
+                            </div>
+                            <div class="md:col-span-2">
+                                <PrimaryButton type="submit" :disabled="transferForms[member.id].processing">
+                                    <span class="inline-flex items-center gap-1.5">
+                                        <AppIcon name="arrow-top-right" class="h-4 w-4" />
+                                        Request transfer
+                                    </span>
+                                </PrimaryButton>
+                            </div>
+                        </form>
+                    </div>
                 </div>
 
                 <div v-show="tab === 'team'" class="space-y-4">
+                    <ReviewTransferPanel
+                        :incoming-review-transfers="incomingReviewTransfers"
+                        :outgoing-review-transfers="outgoingReviewTransfers"
+                        :supervisors="supervisors"
+                    />
+
                     <div
                         v-if="needsReviewSubmissions.length"
-                        class="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-950"
+                        class="flex items-start gap-3 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-950"
                     >
-                        <p class="font-semibold text-sky-900">
-                            {{ needsReviewSubmissions.length }} package{{ needsReviewSubmissions.length === 1 ? '' : 's' }} waiting for your review
-                        </p>
-                        <p class="mt-1 text-sky-900/85">Open each submission below to rate commitments, review evidence, and approve or return.</p>
+                        <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-100 text-sky-700">
+                            <AppIcon name="exclamation-triangle" class="h-5 w-5" />
+                        </span>
+                        <div>
+                            <p class="font-semibold text-sky-900">
+                                {{ needsReviewSubmissions.length }} package{{ needsReviewSubmissions.length === 1 ? '' : 's' }} waiting for your review
+                            </p>
+                            <p class="mt-1 text-sky-900/85">Open each submission below to rate commitments, review evidence, and approve or return.</p>
+                        </div>
                     </div>
 
-                    <h3 class="text-lg font-semibold text-slate-900">Employee submissions</h3>
+                    <div class="flex items-center gap-3">
+                        <span class="flex h-10 w-10 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
+                            <AppIcon name="clipboard" class="h-5 w-5" />
+                        </span>
+                        <h3 class="text-lg font-semibold text-slate-900">Employee submissions</h3>
+                    </div>
 
                     <div v-if="needsReviewSubmissions.length" class="space-y-3">
                         <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Needs review</p>
@@ -152,8 +335,9 @@ function reviewButtonLabel(s) {
                                         <p class="text-xs text-slate-500">{{ periodLabel(s) }} · Submitted {{ formatWhen(s.submitted_at) }}</p>
                                         <p class="mt-1 text-xs text-slate-600">
                                             {{ s.commitments?.length ?? 0 }} commitment(s)
-                                            <span v-if="evidenceCount(s)" class="ml-1 rounded-full bg-emerald-50 px-2 py-0.5 font-semibold text-emerald-800 ring-1 ring-emerald-100">
-                                                📎 {{ evidenceCount(s) }} evidence file{{ evidenceCount(s) === 1 ? '' : 's' }}
+                                            <span v-if="evidenceCount(s)" class="ml-1 inline-flex items-center gap-0.5 rounded-full bg-emerald-50 px-2 py-0.5 font-semibold text-emerald-800 ring-1 ring-emerald-100">
+                                                <AppIcon name="paper-clip" class="h-3 w-3" />
+                                                {{ evidenceCount(s) }} evidence file{{ evidenceCount(s) === 1 ? '' : 's' }}
                                             </span>
                                         </p>
                                     </div>
@@ -163,7 +347,12 @@ function reviewButtonLabel(s) {
                                         in review
                                     </span>
                                     <Link :href="route('supervisor.submissions.show', s.id)">
-                                        <PrimaryButton type="button" class="!bg-sky-600 hover:!bg-sky-700">Review package</PrimaryButton>
+                                        <PrimaryButton type="button" class="!bg-sky-600 hover:!bg-sky-700">
+                                            <span class="inline-flex items-center gap-1.5">
+                                                <AppIcon name="pencil" class="h-4 w-4" />
+                                                Review package
+                                            </span>
+                                        </PrimaryButton>
                                     </Link>
                                 </div>
                             </div>
@@ -189,7 +378,12 @@ function reviewButtonLabel(s) {
                                         {{ s.status.replace('_', ' ') }}
                                     </span>
                                     <Link :href="route('supervisor.submissions.show', s.id)">
-                                        <SecondaryButton type="button">{{ reviewButtonLabel(s) }}</SecondaryButton>
+                                        <SecondaryButton type="button">
+                                            <span class="inline-flex items-center gap-1.5">
+                                                <AppIcon name="eye" class="h-4 w-4" />
+                                                {{ reviewButtonLabel(s) }}
+                                            </span>
+                                        </SecondaryButton>
                                     </Link>
                                 </div>
                             </div>
@@ -197,18 +391,34 @@ function reviewButtonLabel(s) {
                     </div>
 
                     <div v-if="!activeSubmissions.length" class="rounded-xl border border-dashed border-slate-200 bg-white p-6 text-center text-sm text-slate-500">
-                        No active submissions right now. Check the <button type="button" class="font-semibold text-blue-700 hover:underline" @click="tab = 'history'">Rating history</button> tab for past approvals.
+                        <AppIcon name="document-chart-bar" class="mx-auto h-8 w-8 text-slate-300" />
+                        <p class="mt-3">
+                            No active submissions right now. Check the
+                            <button type="button" class="inline-flex items-center gap-1 font-semibold text-blue-700 hover:underline" @click="tab = 'history'">
+                                <AppIcon name="star" class="h-3.5 w-3.5" />
+                                Rating history
+                            </button>
+                            tab for past approvals.
+                        </p>
                     </div>
                 </div>
 
                 <div v-show="tab === 'history'" class="space-y-4">
-                    <div class="flex items-center justify-between">
-                        <h3 class="text-lg font-semibold text-slate-900">Rating history</h3>
-                        <p class="text-xs text-slate-500">Approved IPCR submissions from your team. Open a row to view the full rating sheet and export options.</p>
+                    <div class="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+                        <div class="flex items-center gap-3">
+                            <span class="flex h-10 w-10 items-center justify-center rounded-lg bg-violet-100 text-violet-700">
+                                <AppIcon name="star" class="h-5 w-5" />
+                            </span>
+                            <div>
+                                <h3 class="text-lg font-semibold text-slate-900">Rating history</h3>
+                                <p class="text-xs text-slate-500">Approved IPCR submissions from your team.</p>
+                            </div>
+                        </div>
                     </div>
 
                     <div v-if="!approvedSubmissions.length" class="rounded-xl border border-dashed border-slate-200 bg-white p-8 text-center text-sm text-slate-500">
-                        No approved submissions yet.
+                        <AppIcon name="star" class="mx-auto h-8 w-8 text-slate-300" />
+                        <p class="mt-3">No approved submissions yet.</p>
                     </div>
 
                     <div v-else class="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
@@ -247,8 +457,9 @@ function reviewButtonLabel(s) {
                                     <td class="px-4 py-3 text-right">
                                         <Link
                                             :href="route('supervisor.submissions.show', s.id)"
-                                            class="inline-flex rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+                                            class="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
                                         >
+                                            <AppIcon name="eye" class="h-3.5 w-3.5" />
                                             Open
                                         </Link>
                                     </td>

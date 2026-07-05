@@ -15,7 +15,7 @@ const props = defineProps({
     mode: {
         type: String,
         default: 'supervisor',
-        validator: (value) => ['supervisor', 'admin-submission', 'admin-employee'].includes(value),
+        validator: (value) => ['supervisor', 'admin-submission', 'admin-employee', 'employee-submission'].includes(value),
     },
     show: {
         type: Boolean,
@@ -36,6 +36,10 @@ const exportUrl = computed(() => (format) => {
         return route('admin.users.ratings.export', { user: props.userId, format });
     }
 
+    if (props.mode === 'employee-submission') {
+        return route('employee.submissions.export', { submission: props.submissionId, format });
+    }
+
     return route('supervisor.submissions.export', { submission: props.submissionId, format });
 });
 
@@ -46,6 +50,10 @@ const printUrl = computed(() => {
 
     if (props.mode === 'admin-employee') {
         return route('admin.users.ratings.print', props.userId);
+    }
+
+    if (props.mode === 'employee-submission') {
+        return route('employee.submissions.print', props.submissionId);
     }
 
     return route('supervisor.submissions.print', props.submissionId);

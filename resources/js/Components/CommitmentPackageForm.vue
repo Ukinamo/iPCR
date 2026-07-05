@@ -81,7 +81,7 @@ function addItemRow(entryIdx) {
         _uid: Date.now() + Math.random(),
         id: null,
         description: '',
-        weight: 0,
+        weight: null,
         annual_office_target: '',
         individual_annual_targets: '',
     });
@@ -104,7 +104,7 @@ function addFunctionEntry(type) {
             _uid: Date.now() + Math.random(),
             id: null,
             description: '',
-            weight: 0,
+            weight: null,
             annual_office_target: '',
             individual_annual_targets: '',
         }],
@@ -218,7 +218,7 @@ function removeFunctionEntry(eIdx) {
                                         min="0"
                                         max="100"
                                         class="block w-full text-xs"
-                                        :required="entry.enabled"
+                                        placeholder="Optional"
                                     />
                                 </td>
                                 <td class="border border-slate-300 px-2 py-1 align-top">
@@ -328,7 +328,7 @@ function removeFunctionEntry(eIdx) {
                                         min="0"
                                         max="100"
                                         class="block w-full text-xs"
-                                        :required="entry.enabled"
+                                        placeholder="Optional"
                                     />
                                 </td>
                                 <td class="border border-slate-300 px-2 py-1 align-top">

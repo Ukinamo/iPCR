@@ -2,16 +2,21 @@
 
 use App\Http\Controllers\Admin\EmployeeRatingController;
 use App\Http\Controllers\Admin\ReportController;
+use App\Http\Controllers\Admin\TransferRequestController;
 use App\Http\Controllers\Admin\UserAdminController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\Employee\AccomplishmentController;
 use App\Http\Controllers\Employee\CommitmentController;
 use App\Http\Controllers\Employee\RatingHistoryExportController;
+use App\Http\Controllers\Employee\SubmissionExportController;
 use App\Http\Controllers\Employee\SubmissionController;
 use App\Http\Controllers\LandingController;
+use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\RolePortalController;
 use App\Http\Controllers\Supervisor\SubmissionReviewController;
+use App\Http\Controllers\Supervisor\SubmissionReviewTransferController;
+use App\Http\Controllers\Supervisor\TransferRequestController as SupervisorTransferRequestController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', LandingController::class)->name('home');
@@ -19,6 +24,9 @@ Route::get('/portal', RolePortalController::class)->name('portal.role');
 
 Route::middleware(['auth', 'verified', 'active'])->group(function () {
     Route::get('/dashboard', DashboardController::class)->name('dashboard');
+    Route::get('notifications', [NotificationController::class, 'index'])->name('notifications.index');
+    Route::patch('notifications/{notification}/read', [NotificationController::class, 'markRead'])->name('notifications.read');
+    Route::post('notifications/read-all', [NotificationController::class, 'markAllRead'])->name('notifications.read-all');
     Route::get('accomplishments/{accomplishment}/file', [AccomplishmentController::class, 'file'])->name('accomplishments.file');
 
     Route::middleware('role:employee')->prefix('employee')->name('employee.')->group(function () {
@@ -30,6 +38,10 @@ Route::middleware(['auth', 'verified', 'active'])->group(function () {
         Route::post('accomplishments', [AccomplishmentController::class, 'store'])->name('accomplishments.store');
         Route::delete('accomplishments/{accomplishment}', [AccomplishmentController::class, 'destroy'])->name('accomplishments.destroy');
         Route::get('ratings/history-export', RatingHistoryExportController::class)->name('ratings.history.export');
+        Route::get('submissions/{submission}/export/{format?}', [SubmissionExportController::class, 'export'])
+            ->where('format', 'xlsx|csv|pdf')
+            ->name('submissions.export');
+        Route::get('submissions/{submission}/print', [SubmissionExportController::class, 'print'])->name('submissions.print');
         Route::post('submissions', [SubmissionController::class, 'store'])->name('submissions.store');
     });
 
@@ -40,6 +52,12 @@ Route::middleware(['auth', 'verified', 'active'])->group(function () {
             ->name('submissions.export');
         Route::get('submissions/{submission}/print', [SubmissionReviewController::class, 'print'])->name('submissions.print');
         Route::patch('submissions/{submission}', [SubmissionReviewController::class, 'update'])->name('submissions.update');
+        Route::post('submissions/{submission}/review-transfers', [SubmissionReviewTransferController::class, 'store'])->name('submissions.review-transfers.store');
+        Route::delete('review-transfers/{reviewTransfer}', [SubmissionReviewTransferController::class, 'destroy'])->name('review-transfers.destroy');
+        Route::patch('review-transfers/{reviewTransfer}/accept', [SubmissionReviewTransferController::class, 'accept'])->name('review-transfers.accept');
+        Route::patch('review-transfers/{reviewTransfer}/reject', [SubmissionReviewTransferController::class, 'reject'])->name('review-transfers.reject');
+        Route::post('transfer-requests', [SupervisorTransferRequestController::class, 'store'])->name('transfer-requests.store');
+        Route::delete('transfer-requests/{transferRequest}', [SupervisorTransferRequestController::class, 'destroy'])->name('transfer-requests.destroy');
     });
 
     Route::middleware('role:administrator')->prefix('admin')->name('admin.')->group(function () {
@@ -64,6 +82,9 @@ Route::middleware(['auth', 'verified', 'active'])->group(function () {
         Route::get('reports/ratings', [ReportController::class, 'ratings'])->name('reports.ratings');
         Route::get('reports/submissions/{submission}', [ReportController::class, 'showSubmission'])->name('reports.submissions.show');
         Route::get('reports/users.csv', [ReportController::class, 'usersCsv'])->name('reports.users');
+        Route::get('transfer-requests', [TransferRequestController::class, 'index'])->name('transfer-requests.index');
+        Route::patch('transfer-requests/{transferRequest}/approve', [TransferRequestController::class, 'approve'])->name('transfer-requests.approve');
+        Route::patch('transfer-requests/{transferRequest}/reject', [TransferRequestController::class, 'reject'])->name('transfer-requests.reject');
     });
 
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');

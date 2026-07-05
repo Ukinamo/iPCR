@@ -2,6 +2,7 @@
 import Dropdown from '@/Components/Dropdown.vue';
 import DropdownLink from '@/Components/DropdownLink.vue';
 import NavLink from '@/Components/NavLink.vue';
+import NotificationBell from '@/Components/NotificationBell.vue';
 import ResponsiveNavLink from '@/Components/ResponsiveNavLink.vue';
 import { Link, usePage } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
@@ -48,7 +49,8 @@ const accent = computed(() => (page.props.auth?.user?.role === 'administrator' ?
                             </div>
                         </div>
 
-                        <div class="hidden sm:ms-6 sm:flex sm:items-center">
+                        <div class="hidden sm:ms-6 sm:flex sm:items-center sm:gap-4">
+                            <NotificationBell />
                             <div class="text-right text-xs text-slate-500">
                                 <p class="font-medium text-slate-800">{{ $page.props.auth.user.email }}</p>
                                 <p>{{ roleLabel }}</p>
@@ -128,6 +130,9 @@ const accent = computed(() => (page.props.auth?.user?.role === 'administrator' ?
                     </div>
 
                     <div class="border-t border-slate-200 pb-1 pt-4">
+                        <div class="px-4 pb-3">
+                            <NotificationBell />
+                        </div>
                         <div class="px-4">
                             <div class="text-base font-medium text-slate-800">
                                 {{ $page.props.auth.user.name }}

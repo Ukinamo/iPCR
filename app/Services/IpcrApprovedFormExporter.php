@@ -372,7 +372,9 @@ final class IpcrApprovedFormExporter
             }
         }
 
-        $sheet->setCellValue(self::cell(self::COL_WEIGHT, $start), ((float) $c->weight) / 100);
+        if ($c->weight !== null) {
+            $sheet->setCellValue(self::cell(self::COL_WEIGHT, $start), ((float) $c->weight) / 100);
+        }
 
         $officeTarget = trim((string) ($c->annual_office_target ?? ''));
         if ($officeTarget !== '') {
@@ -404,7 +406,7 @@ final class IpcrApprovedFormExporter
         if ($c->rating_timeliness !== null) {
             $sheet->setCellValue(self::cell(self::COL_TIMELINESS, $start), (int) $c->rating_timeliness);
         }
-        if ($c->rating_average !== null) {
+        if ($c->weight !== null && $c->rating_average !== null) {
             $sheet->setCellValue(self::cell(self::COL_AVERAGE, $start), (float) $c->rating_average);
         }
 
@@ -421,6 +423,10 @@ final class IpcrApprovedFormExporter
 
     private static function weightedRemarkScore(Commitment $c): ?float
     {
+        if ($c->weight === null) {
+            return null;
+        }
+
         if ($c->rating_weighted !== null) {
             return round((float) $c->rating_weighted, 2);
         }
@@ -442,7 +448,7 @@ final class IpcrApprovedFormExporter
     {
         self::copyRowStyles($sheet, $row, $styleReference, 56, 1, self::LAST_COL);
 
-        $weightTotal = round((float) $commitments->sum('weight'), 2);
+        $weightTotal = round((float) $commitments->sum(fn (Commitment $c) => $c->weight ?? 0), 2);
         $sheet->setCellValue(self::cell(self::COL_WEIGHT, $row), $weightTotal / 100);
 
         $pct = self::totalAccomplishmentPercent($commitments);
@@ -450,11 +456,15 @@ final class IpcrApprovedFormExporter
             $sheet->setCellValue(self::cell(self::COL_PERCENT, $row), $pct);
         }
 
-        $avgSum = round((float) $commitments->sum('rating_average'), 2);
-        $sheet->setCellValue(self::cell(self::COL_AVERAGE, $row), $avgSum);
+        $avgSum = round((float) $commitments->sum(fn (Commitment $c) => $c->weight !== null ? ($c->rating_average ?? 0) : 0), 2);
+        if ($commitments->contains(fn (Commitment $c) => $c->weight !== null && $c->rating_average !== null)) {
+            $sheet->setCellValue(self::cell(self::COL_AVERAGE, $row), $avgSum);
+        }
 
         $weightedSum = round($commitments->sum(fn (Commitment $c) => self::weightedRemarkScore($c) ?? 0.0), 2);
-        $sheet->setCellValue(self::cell(self::COL_REMARKS, $row), $weightedSum);
+        if ($commitments->contains(fn (Commitment $c) => self::weightedRemarkScore($c) !== null)) {
+            $sheet->setCellValue(self::cell(self::COL_REMARKS, $row), $weightedSum);
+        }
     }
 
     private static function patchFinalRatingRow(Worksheet $sheet, int $row, IpcrSubmission $submission, Worksheet $styleReference): void

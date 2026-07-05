@@ -85,14 +85,24 @@ final class IpcrFormRatingCalculator
     }
 
     /**
-     * @return array{quality: int, efficiency: int, timeliness: int, average: float, weighted: float}
+     * @return array{quality: ?int, efficiency: ?int, timeliness: ?int, average: ?float, weighted: ?float}
      */
     public static function scoreRowFromRatings(
         int $quality,
         int $efficiency,
         int $timeliness,
-        float $weightPercent,
+        ?float $weightPercent,
     ): array {
+        if ($weightPercent === null) {
+            return [
+                'quality' => null,
+                'efficiency' => null,
+                'timeliness' => null,
+                'average' => null,
+                'weighted' => null,
+            ];
+        }
+
         $average = ($quality + $efficiency + $timeliness) / 3.0;
 
         return [
@@ -139,8 +149,12 @@ final class IpcrFormRatingCalculator
         ];
     }
 
-    public static function weightedFromAverageAndWeight(float $average, float $weightPercent): float
+    public static function weightedFromAverageAndWeight(float $average, ?float $weightPercent): ?float
     {
+        if ($weightPercent === null) {
+            return null;
+        }
+
         $w = max(0.0, $weightPercent / 100.0);
 
         return round($average * $w, 4);

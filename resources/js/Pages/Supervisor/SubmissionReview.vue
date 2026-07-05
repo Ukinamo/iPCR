@@ -1,10 +1,12 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import AppIcon from '@/Components/AppIcon.vue';
 import EvidencePanel from '@/Components/EvidencePanel.vue';
 import IpcrExportDropdown from '@/Components/IpcrExportDropdown.vue';
 import InputError from '@/Components/InputError.vue';
 import InputLabel from '@/Components/InputLabel.vue';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
+import ReviewTransferPanel from '@/Components/ReviewTransferPanel.vue';
 import SecondaryButton from '@/Components/SecondaryButton.vue';
 import TextInput from '@/Components/TextInput.vue';
 import { formatWholeNumber, roundWholeNumberForSubmit } from '@/utils/numberFormat';
@@ -13,6 +15,14 @@ import { computed } from 'vue';
 
 const props = defineProps({
     submission: Object,
+    supervisors: {
+        type: Array,
+        default: () => [],
+    },
+    pendingReviewTransfer: {
+        type: Object,
+        default: null,
+    },
 });
 
 const isApproved = computed(() => props.submission?.status === 'approved');
@@ -101,9 +111,9 @@ const reviewForm = useForm({
         );
         return {
             id: c.id,
-            rating_quality: c.rating_quality ?? suggested ?? 3,
-            rating_efficiency: c.rating_efficiency ?? suggested ?? 3,
-            rating_timeliness: c.rating_timeliness ?? suggested ?? 3,
+            rating_quality: c.weight != null ? (c.rating_quality ?? suggested ?? 3) : null,
+            rating_efficiency: c.weight != null ? (c.rating_efficiency ?? suggested ?? 3) : null,
+            rating_timeliness: c.weight != null ? (c.rating_timeliness ?? suggested ?? 3) : null,
             rating_q3_target: c.rating_q3_target ?? '',
             rating_q3_actual: c.rating_q3_actual ?? '',
             rating_q4_target: c.rating_q4_target ?? '',
@@ -119,6 +129,9 @@ function rowPreview(commitment, row) {
         row.rating_q4_target,
         row.rating_q4_actual,
     );
+    if (commitment.weight == null) {
+        return { ...ratio, q: null, e: null, t: null, avg: null, weighted: null };
+    }
     const q = Number(row.rating_quality);
     const e = Number(row.rating_efficiency);
     const t = Number(row.rating_timeliness);
@@ -147,26 +160,52 @@ function applySuggestedRatings(row) {
 
 function sumWeightedPreview() {
     let sum = 0;
+    let hasAny = false;
     for (const c of sortedCommitments.value) {
+        if (c.weight == null) {
+            continue;
+        }
         const row = reviewForm.commitments.find((r) => r.id === c.id);
-        if (!row) return null;
+        if (!row) {
+            continue;
+        }
         const p = rowPreview(c, row);
-        if (p.weighted == null) return null;
+        if (p.weighted == null) {
+            continue;
+        }
         sum += p.weighted;
+        hasAny = true;
     }
-    return sum;
+    return hasAny ? sum : null;
 }
 
 function sumAveragePreview() {
     let sum = 0;
+    let hasAny = false;
     for (const c of sortedCommitments.value) {
+        if (c.weight == null) {
+            continue;
+        }
         const row = reviewForm.commitments.find((r) => r.id === c.id);
-        if (!row) return null;
+        if (!row) {
+            continue;
+        }
         const p = rowPreview(c, row);
-        if (p.avg == null) return null;
+        if (p.avg == null) {
+            continue;
+        }
         sum += p.avg;
+        hasAny = true;
     }
-    return sum;
+    return hasAny ? sum : null;
+}
+
+function ratedAverageTotal(commitments) {
+    const rated = commitments.filter((c) => c.weight != null && c.rating_average != null);
+    if (!rated.length) {
+        return '—';
+    }
+    return rated.reduce((sum, c) => sum + Number(c.rating_average), 0).toFixed(2);
 }
 
 function rowWeightedDisplay(commitment, row) {
@@ -253,16 +292,30 @@ function submitReview() {
         return {
             action: data.action,
             supervisor_feedback: data.supervisor_feedback,
-            commitments: data.commitments.map((r) => ({
-                id: r.id,
-                rating_quality: Number(r.rating_quality),
-                rating_efficiency: Number(r.rating_efficiency),
-                rating_timeliness: Number(r.rating_timeliness),
-                rating_q3_target: roundWholeNumberForSubmit(r.rating_q3_target),
-                rating_q3_actual: roundWholeNumberForSubmit(r.rating_q3_actual),
-                rating_q4_target: roundWholeNumberForSubmit(r.rating_q4_target),
-                rating_q4_actual: roundWholeNumberForSubmit(r.rating_q4_actual),
-            })),
+            commitments: data.commitments.map((r) => {
+                const commitment = sortedCommitments.value.find((c) => c.id === r.id);
+                const base = {
+                    id: r.id,
+                    rating_q3_target: roundWholeNumberForSubmit(r.rating_q3_target),
+                    rating_q3_actual: roundWholeNumberForSubmit(r.rating_q3_actual),
+                    rating_q4_target: roundWholeNumberForSubmit(r.rating_q4_target),
+                    rating_q4_actual: roundWholeNumberForSubmit(r.rating_q4_actual),
+                };
+                if (commitment?.weight == null) {
+                    return {
+                        ...base,
+                        rating_quality: null,
+                        rating_efficiency: null,
+                        rating_timeliness: null,
+                    };
+                }
+                return {
+                    ...base,
+                    rating_quality: Number(r.rating_quality),
+                    rating_efficiency: Number(r.rating_efficiency),
+                    rating_timeliness: Number(r.rating_timeliness),
+                };
+            }),
         };
     }).patch(route('supervisor.submissions.update', props.submission.id), {
         preserveScroll: true,
@@ -299,21 +352,27 @@ function badge(status) {
     <AuthenticatedLayout>
         <template #header>
             <div class="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                    <p class="text-xs font-semibold uppercase text-slate-500">IPCR Submission</p>
-                    <h2 class="text-xl font-semibold leading-tight text-gray-800">
-                        {{ submission.employee.name }} — {{ periodLabel(submission) }}
-                    </h2>
-                    <p class="text-sm text-gray-500">
-                        Submitted {{ formatWhen(submission.submitted_at) }}
-                        <span class="ml-2 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ring-1" :class="badge(submission.status)">
-                            {{ submission.status.replace('_', ' ') }}
-                        </span>
-                    </p>
+                <div class="flex items-start gap-3">
+                    <span class="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-sky-100 text-sky-700">
+                        <AppIcon name="clipboard" class="h-5 w-5" />
+                    </span>
+                    <div>
+                        <p class="text-xs font-semibold uppercase text-slate-500">IPCR Submission</p>
+                        <h2 class="text-xl font-semibold leading-tight text-gray-800">
+                            {{ submission.employee.name }} — {{ periodLabel(submission) }}
+                        </h2>
+                        <p class="text-sm text-gray-500">
+                            Submitted {{ formatWhen(submission.submitted_at) }}
+                            <span class="ml-2 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ring-1" :class="badge(submission.status)">
+                                {{ submission.status.replace('_', ' ') }}
+                            </span>
+                        </p>
+                    </div>
                 </div>
                 <div class="flex gap-2">
-                    <Link :href="route('dashboard')" class="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50">
-                        ← Back to dashboard
+                    <Link :href="route('dashboard')" class="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50">
+                        <AppIcon name="arrow-left" class="h-4 w-4" />
+                        Back to dashboard
                     </Link>
                     <IpcrExportDropdown v-if="isApproved" :submission-id="submission.id" />
                 </div>
@@ -322,9 +381,20 @@ function badge(status) {
 
         <div class="py-6">
             <div class="mx-auto w-full max-w-[100vw] space-y-5 px-3 sm:px-4 lg:px-6">
+                <ReviewTransferPanel
+                    :submission="submission"
+                    :supervisors="supervisors"
+                    :pending-review-transfer="pendingReviewTransfer"
+                />
+
                 <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-                    <p class="text-sm font-semibold text-slate-800">IPCR Form 1 — Evaluation</p>
-                    <p class="mt-1 text-xs text-slate-500">
+                    <div class="flex items-start gap-3">
+                        <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
+                            <AppIcon name="star" class="h-4 w-4" />
+                        </span>
+                        <div>
+                            <p class="text-sm font-semibold text-slate-800">IPCR Form 1 — Evaluation</p>
+                            <p class="mt-1 text-xs text-slate-500">
                         <template v-if="isEditable">
                             Fill in Q3 and Q4 <strong>Target</strong> / <strong>Actual</strong> per indicator (optional).
                             Q, E, and T default from the accomplishment ratio when targets and actuals are provided.
@@ -336,7 +406,9 @@ function badge(status) {
                         <template v-else>
                             This submission is {{ submission.status.replace('_', ' ') }}. No ratings can be edited.
                         </template>
-                    </p>
+                            </p>
+                        </div>
+                    </div>
 
                     <div class="mt-2 overflow-x-auto rounded-lg border border-slate-300">
                         <table class="min-w-full border-collapse text-[11px]">
@@ -404,7 +476,7 @@ function badge(status) {
                                                 :rowspan="row.lineCount"
                                                 class="border border-slate-300 px-2 py-1 text-center font-medium text-slate-800"
                                             >
-                                                {{ Number(row.commitment.weight).toFixed(0) }}%
+                                                {{ row.commitment.weight != null ? Number(row.commitment.weight).toFixed(0) + '%' : '—' }}
                                             </td>
                                             <td
                                                 v-if="row.lineIndex === 0"
@@ -479,16 +551,16 @@ function badge(status) {
                                                     {{ formatAccomplishmentPercent(rowPreview(row.commitment, ratingRow(row.commitment.id)).percent) }}
                                                 </td>
                                                 <td :rowspan="row.lineCount" class="border border-slate-300 px-1 py-1">
-                                                    <TextInput v-if="isEditable" v-model="ratingRow(row.commitment.id).rating_quality" type="number" min="1" max="5" class="w-14 text-xs" />
-                                                    <span v-else class="block text-center text-slate-700">{{ row.commitment.rating_quality ?? '—' }}</span>
+                                                    <TextInput v-if="isEditable && row.commitment.weight != null" v-model="ratingRow(row.commitment.id).rating_quality" type="number" min="1" max="5" class="w-14 text-xs" />
+                                                    <span v-else class="block text-center text-slate-700">{{ row.commitment.weight != null ? (row.commitment.rating_quality ?? '—') : '—' }}</span>
                                                 </td>
                                                 <td :rowspan="row.lineCount" class="border border-slate-300 px-1 py-1">
-                                                    <TextInput v-if="isEditable" v-model="ratingRow(row.commitment.id).rating_efficiency" type="number" min="1" max="5" class="w-14 text-xs" />
-                                                    <span v-else class="block text-center text-slate-700">{{ row.commitment.rating_efficiency ?? '—' }}</span>
+                                                    <TextInput v-if="isEditable && row.commitment.weight != null" v-model="ratingRow(row.commitment.id).rating_efficiency" type="number" min="1" max="5" class="w-14 text-xs" />
+                                                    <span v-else class="block text-center text-slate-700">{{ row.commitment.weight != null ? (row.commitment.rating_efficiency ?? '—') : '—' }}</span>
                                                 </td>
                                                 <td :rowspan="row.lineCount" class="border border-slate-300 px-1 py-1">
-                                                    <TextInput v-if="isEditable" v-model="ratingRow(row.commitment.id).rating_timeliness" type="number" min="1" max="5" class="w-14 text-xs" />
-                                                    <span v-else class="block text-center text-slate-700">{{ row.commitment.rating_timeliness ?? '—' }}</span>
+                                                    <TextInput v-if="isEditable && row.commitment.weight != null" v-model="ratingRow(row.commitment.id).rating_timeliness" type="number" min="1" max="5" class="w-14 text-xs" />
+                                                    <span v-else class="block text-center text-slate-700">{{ row.commitment.weight != null ? (row.commitment.rating_timeliness ?? '—') : '—' }}</span>
                                                 </td>
                                                 <td :rowspan="row.lineCount" class="border border-slate-300 px-2 py-1 text-center font-semibold text-slate-800">
                                                     {{ rowPreview(row.commitment, ratingRow(row.commitment.id)).avg != null ? rowPreview(row.commitment, ratingRow(row.commitment.id)).avg.toFixed(2) : '—' }}
@@ -510,7 +582,7 @@ function badge(status) {
                                     <td colspan="3" class="border border-slate-300"></td>
                                     <td class="border border-slate-300 px-2 py-1 text-center text-slate-800">
                                         {{ isApproved
-                                            ? sortedCommitments.reduce((a, c) => a + Number(c.rating_average || 0), 0).toFixed(2)
+                                            ? ratedAverageTotal(sortedCommitments)
                                             : (sumAveragePreview() != null ? sumAveragePreview().toFixed(2) : '—') }}
                                     </td>
                                     <td class="border border-slate-300 px-2 py-1 text-center text-amber-800">
@@ -533,61 +605,96 @@ function badge(status) {
                 </div>
 
                 <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+                    <div class="mb-3 flex items-center gap-2">
+                        <span class="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700">
+                            <AppIcon name="paper-clip" class="h-4 w-4" />
+                        </span>
+                        <p class="text-sm font-semibold text-slate-800">Supporting evidence</p>
+                    </div>
                     <EvidencePanel :items="packageEvidence" :show-form="false" />
                 </div>
 
                 <div v-if="isEditable" class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-                    <p class="text-sm font-semibold text-slate-800">Decision</p>
-                    <p class="mt-1 text-xs text-slate-500">Approve after completing each row, or return with actionable comments (min. 20 characters).</p>
+                    <div class="flex items-start gap-3">
+                        <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-100 text-blue-700">
+                            <AppIcon name="check-badge" class="h-5 w-5" />
+                        </span>
+                        <div class="min-w-0 flex-1">
+                            <p class="text-sm font-semibold text-slate-800">Decision</p>
+                            <p class="mt-1 text-xs text-slate-500">Approve after completing each row, or return with actionable comments (min. 20 characters).</p>
 
-                    <div class="mt-3 flex gap-2">
-                        <button
-                            type="button"
-                            class="flex-1 rounded-xl border px-3 py-2.5 text-sm font-semibold transition"
-                            :class="reviewForm.action === 'approve' ? 'border-blue-600 bg-blue-50 text-blue-800' : 'border-slate-200'"
-                            @click="reviewForm.action = 'approve'"
-                        >
-                            Approve
-                        </button>
-                        <button
-                            type="button"
-                            class="flex-1 rounded-xl border px-3 py-2.5 text-sm font-semibold transition"
-                            :class="reviewForm.action === 'return' ? 'border-amber-500 bg-amber-50 text-amber-900' : 'border-slate-200'"
-                            @click="reviewForm.action = 'return'"
-                        >
-                            Return for revision
-                        </button>
-                    </div>
+                            <div class="mt-3 flex gap-2">
+                                <button
+                                    type="button"
+                                    class="inline-flex flex-1 items-center justify-center gap-2 rounded-xl border px-3 py-2.5 text-sm font-semibold transition"
+                                    :class="reviewForm.action === 'approve' ? 'border-blue-600 bg-blue-50 text-blue-800' : 'border-slate-200'"
+                                    @click="reviewForm.action = 'approve'"
+                                >
+                                    <AppIcon name="check-badge" class="h-4 w-4" />
+                                    Approve
+                                </button>
+                                <button
+                                    type="button"
+                                    class="inline-flex flex-1 items-center justify-center gap-2 rounded-xl border px-3 py-2.5 text-sm font-semibold transition"
+                                    :class="reviewForm.action === 'return' ? 'border-amber-500 bg-amber-50 text-amber-900' : 'border-slate-200'"
+                                    @click="reviewForm.action = 'return'"
+                                >
+                                    <AppIcon name="exclamation-triangle" class="h-4 w-4" />
+                                    Return for revision
+                                </button>
+                            </div>
 
-                    <div class="mt-4">
-                        <InputLabel :value="reviewForm.action === 'return' ? 'Comments for employee (required when returning)' : 'Optional comments'" />
-                        <textarea
-                            v-model="reviewForm.supervisor_feedback"
-                            rows="4"
-                            class="mt-1 block w-full rounded-xl border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                            :placeholder="reviewForm.action === 'return'
-                                ? 'Explain what to fix (targets, evidence, weights, or narrative). Minimum 20 characters.'
-                                : 'Optional recognition or follow-up items.'"
-                        />
-                        <InputError class="mt-1" :message="reviewForm.errors.supervisor_feedback" />
-                    </div>
+                            <div class="mt-4">
+                                <InputLabel :value="reviewForm.action === 'return' ? 'Comments for employee (required when returning)' : 'Optional comments'" />
+                                <textarea
+                                    v-model="reviewForm.supervisor_feedback"
+                                    rows="4"
+                                    class="mt-1 block w-full rounded-xl border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                                    :placeholder="reviewForm.action === 'return'
+                                        ? 'Explain what to fix (targets, evidence, weights, or narrative). Minimum 20 characters.'
+                                        : 'Optional recognition or follow-up items.'"
+                                />
+                                <InputError class="mt-1" :message="reviewForm.errors.supervisor_feedback" />
+                            </div>
 
-                    <div class="mt-6 flex justify-end gap-2">
-                        <Link :href="route('dashboard')">
-                            <SecondaryButton type="button">Cancel</SecondaryButton>
-                        </Link>
-                        <PrimaryButton :disabled="reviewForm.processing" @click="submitReview">Submit decision</PrimaryButton>
+                            <div class="mt-6 flex justify-end gap-2">
+                                <Link :href="route('dashboard')">
+                                    <SecondaryButton type="button">
+                                        <span class="inline-flex items-center gap-1.5">
+                                            <AppIcon name="x-mark" class="h-4 w-4" />
+                                            Cancel
+                                        </span>
+                                    </SecondaryButton>
+                                </Link>
+                                <PrimaryButton :disabled="reviewForm.processing" @click="submitReview">
+                                    <span class="inline-flex items-center gap-1.5">
+                                        <AppIcon name="check-badge" class="h-4 w-4" />
+                                        Submit decision
+                                    </span>
+                                </PrimaryButton>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
                 <div v-else-if="submission.supervisor_feedback" class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm text-sm sm:p-5">
-                    <p class="font-semibold text-slate-800">Supervisor feedback</p>
-                    <p class="mt-1 whitespace-pre-line text-slate-600">{{ submission.supervisor_feedback }}</p>
+                    <div class="flex items-start gap-3">
+                        <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
+                            <AppIcon name="pencil" class="h-4 w-4" />
+                        </span>
+                        <div>
+                            <p class="font-semibold text-slate-800">Supervisor feedback</p>
+                            <p class="mt-1 whitespace-pre-line text-slate-600">{{ submission.supervisor_feedback }}</p>
+                        </div>
+                    </div>
                 </div>
 
                 <div class="grid gap-3 text-[11px] md:grid-cols-2">
                     <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                        <p class="font-semibold text-slate-700">Rating scale</p>
+                        <p class="flex items-center gap-1.5 font-semibold text-slate-700">
+                            <AppIcon name="star" class="h-3.5 w-3.5 text-amber-600" />
+                            Rating scale
+                        </p>
                         <ul class="mt-1 list-disc pl-4 text-slate-600">
                             <li>5 — Outstanding (≥130%)</li>
                             <li>4 — Very Satisfactory (115–129%)</li>
@@ -597,7 +704,10 @@ function badge(status) {
                         </ul>
                     </div>
                     <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                        <p class="font-semibold text-slate-700">Legend</p>
+                        <p class="flex items-center gap-1.5 font-semibold text-slate-700">
+                            <AppIcon name="document-chart-bar" class="h-3.5 w-3.5 text-sky-600" />
+                            Legend
+                        </p>
                         <p class="mt-1 text-slate-600">
                             Q, E, and T default from accomplishment % (see scale) and may be overridden. Average = (Q + E + T) ÷ 3.
                             Remarks = Weight% × Average. TOTAL Remarks = Σ Remarks = final average rating.

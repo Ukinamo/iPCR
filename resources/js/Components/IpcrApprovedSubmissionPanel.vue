@@ -20,12 +20,13 @@ function period(s) {
 function submissionTotals(submission) {
     const rows = submission?.commitments || [];
     const weight = rows.reduce((sum, c) => sum + Number(c.weight || 0), 0);
-    const average = rows.reduce((sum, c) => sum + Number(c.rating_average || 0), 0);
-    const weighted = rows.reduce((sum, c) => sum + Number(c.rating_weighted || 0), 0);
+    const rated = rows.filter((c) => c.weight != null);
+    const average = rated.reduce((sum, c) => sum + Number(c.rating_average || 0), 0);
+    const weighted = rated.reduce((sum, c) => sum + Number(c.rating_weighted || 0), 0);
     return {
         weight: weight.toFixed(0),
-        average: formatDecimal(average, 2),
-        weighted: formatDecimal(weighted, 2),
+        average: rated.some((c) => c.rating_average != null) ? formatDecimal(average, 2) : '—',
+        weighted: rated.some((c) => c.rating_weighted != null) ? formatDecimal(weighted, 2) : '—',
     };
 }
 
@@ -37,14 +38,20 @@ function indicatorLines(c) {
 }
 
 function formatAverage(c) {
+    if (c?.weight == null) {
+        return '—';
+    }
     return formatDecimal(c?.rating_average, 2);
 }
 
 function formatWeighted(c) {
+    if (c?.weight == null) {
+        return '—';
+    }
     if (c?.rating_weighted != null) {
         return formatDecimal(c.rating_weighted, 2);
     }
-    if (c?.rating_average != null && c?.weight != null) {
+    if (c?.rating_average != null) {
         return formatDecimal(Number(c.rating_average) * (Number(c.weight) / 100), 2);
     }
     return '—';
@@ -136,7 +143,7 @@ function formatReviewed(iso) {
                                     {{ c.title }}
                                 </td>
                                 <td class="border border-slate-300 px-2 py-1 text-slate-700">{{ line }}</td>
-                                <td v-if="li === 0" :rowspan="indicatorLines(c).length" class="border border-slate-300 px-2 py-1 text-center">{{ Number(c.weight).toFixed(0) }}%</td>
+                                <td v-if="li === 0" :rowspan="indicatorLines(c).length" class="border border-slate-300 px-2 py-1 text-center">{{ c.weight != null ? Number(c.weight).toFixed(0) + '%' : '—' }}</td>
                                 <td v-if="li === 0" :rowspan="indicatorLines(c).length" class="border border-slate-300 px-2 py-1 text-center">{{ c.annual_office_target ?? '—' }}</td>
                                 <td v-if="li === 0" :rowspan="indicatorLines(c).length" class="border border-slate-300 px-2 py-1 text-center">{{ c.individual_annual_targets ?? '—' }}</td>
                                 <td v-if="li === 0" :rowspan="indicatorLines(c).length" class="border border-slate-300 px-2 py-1 text-center">{{ formatWholeNumber(c.rating_q3_target) }}</td>

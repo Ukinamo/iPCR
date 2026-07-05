@@ -22,6 +22,7 @@ class UserAdminController extends Controller
             'users' => User::query()->orderBy('name')->get(),
             'supervisors' => $this->supervisors(),
             'pendingCount' => User::query()->where('account_status', AccountStatus::Pending)->count(),
+            'pendingTransferCount' => \App\Models\SupervisorTransferRequest::where('status', \App\Enums\TransferRequestStatus::Pending)->count(),
         ]);
     }
 

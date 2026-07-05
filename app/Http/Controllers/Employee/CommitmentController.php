@@ -31,7 +31,7 @@ class CommitmentController extends Controller
             'title' => ['required', 'string', 'max:255'],
             'description' => ['nullable', 'string', 'max:8000'],
             'function_type' => ['required', 'in:core,strategic'],
-            'weight' => ['required', 'numeric', 'min:0', 'max:100'],
+            'weight' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'annual_office_target' => ['nullable', 'string', 'max:255'],
             'individual_annual_targets' => ['nullable', 'string', 'max:255'],
             'evaluation_year' => ['required', 'integer', 'min:2000', 'max:2100'],
@@ -61,7 +61,7 @@ class CommitmentController extends Controller
                 'title' => $data['title'],
                 'description' => $data['description'] ?? null,
                 'function_type' => $data['function_type'],
-                'weight' => $data['weight'],
+                'weight' => $this->normalizeWeight($data['weight']),
                 'annual_office_target' => $data['annual_office_target'] ?? null,
                 'individual_annual_targets' => $data['individual_annual_targets'] ?? null,
                 'progress' => 0,
@@ -120,7 +120,7 @@ class CommitmentController extends Controller
             'entries.*.function_type' => ['required', 'in:core,strategic'],
             'entries.*.title' => ['required', 'string', 'max:255'],
             'entries.*.description' => ['nullable', 'string', 'max:8000'],
-            'entries.*.weight' => ['required', 'numeric', 'min:0', 'max:100'],
+            'entries.*.weight' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'entries.*.annual_office_target' => ['nullable', 'string', 'max:255'],
             'entries.*.individual_annual_targets' => ['nullable', 'string', 'max:255'],
             'evidence_title' => ['nullable', 'string', 'max:255'],
@@ -141,9 +141,9 @@ class CommitmentController extends Controller
 
         foreach ($data['entries'] as $entry) {
             if ($entry['function_type'] === 'core') {
-                $core += (float) $entry['weight'];
+                $core += (float) ($entry['weight'] ?? 0);
             } else {
-                $strategic += (float) $entry['weight'];
+                $strategic += (float) ($entry['weight'] ?? 0);
             }
 
             $message = CommitmentWeightRules::assertCapsRespected($core, $strategic);
@@ -164,7 +164,7 @@ class CommitmentController extends Controller
                     'title' => $entry['title'],
                     'description' => $entry['description'] ?? null,
                     'function_type' => $entry['function_type'],
-                    'weight' => $entry['weight'],
+                    'weight' => $this->normalizeWeight($entry['weight']),
                     'annual_office_target' => $entry['annual_office_target'] ?? null,
                     'individual_annual_targets' => $entry['individual_annual_targets'] ?? null,
                     'progress' => 0,
@@ -304,7 +304,7 @@ class CommitmentController extends Controller
             'entries.*.function_type' => ['required', 'in:core,strategic'],
             'entries.*.title' => ['required', 'string', 'max:255'],
             'entries.*.description' => ['nullable', 'string', 'max:8000'],
-            'entries.*.weight' => ['required', 'numeric', 'min:0', 'max:100'],
+            'entries.*.weight' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'entries.*.annual_office_target' => ['nullable', 'string', 'max:255'],
             'entries.*.individual_annual_targets' => ['nullable', 'string', 'max:255'],
         ]);
@@ -328,9 +328,9 @@ class CommitmentController extends Controller
 
         foreach ($data['entries'] as $entry) {
             if ($entry['function_type'] === 'core') {
-                $core += (float) $entry['weight'];
+                $core += (float) ($entry['weight'] ?? 0);
             } else {
-                $strategic += (float) $entry['weight'];
+                $strategic += (float) ($entry['weight'] ?? 0);
             }
 
             $message = CommitmentWeightRules::assertCapsRespected($core, $strategic);
@@ -355,7 +355,7 @@ class CommitmentController extends Controller
                     'title' => $entry['title'],
                     'description' => $entry['description'] ?? null,
                     'function_type' => $entry['function_type'],
-                    'weight' => $entry['weight'],
+                    'weight' => $this->normalizeWeight($entry['weight']),
                     'annual_office_target' => $entry['annual_office_target'] ?? null,
                     'individual_annual_targets' => $entry['individual_annual_targets'] ?? null,
                     'period_label' => $data['period_label'],
@@ -408,7 +408,7 @@ class CommitmentController extends Controller
             'title' => ['required', 'string', 'max:255'],
             'description' => ['nullable', 'string', 'max:8000'],
             'function_type' => ['required', 'in:core,strategic'],
-            'weight' => ['required', 'numeric', 'min:0', 'max:100'],
+            'weight' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'annual_office_target' => ['nullable', 'string', 'max:255'],
             'individual_annual_targets' => ['nullable', 'string', 'max:255'],
             'period_label' => ['required', 'string', 'max:32'],
@@ -422,6 +422,7 @@ class CommitmentController extends Controller
 
         $this->assertWeightCapsAfterChange($request->user(), $merged, $commitment->id);
 
+        $data['weight'] = $this->normalizeWeight($data['weight']);
         $commitment->update($data);
 
         AuditLogger::log($request->user()->id, 'commitment.updated', $commitment, null, $request);
@@ -491,8 +492,8 @@ class CommitmentController extends Controller
             $excludeCommitmentId,
         );
 
-        $addCore = ($data['function_type'] === 'core') ? (float) $data['weight'] : 0.0;
-        $addStrategic = ($data['function_type'] === 'strategic') ? (float) $data['weight'] : 0.0;
+        $addCore = ($data['function_type'] === 'core') ? (float) ($data['weight'] ?? 0) : 0.0;
+        $addStrategic = ($data['function_type'] === 'strategic') ? (float) ($data['weight'] ?? 0) : 0.0;
 
         $core = $totals['core'] + $addCore;
         $strategic = $totals['strategic'] + $addStrategic;
@@ -501,5 +502,14 @@ class CommitmentController extends Controller
         if ($message !== null) {
             throw ValidationException::withMessages(['weight' => $message]);
         }
+    }
+
+    private function normalizeWeight(mixed $value): ?float
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        return (float) $value;
     }
 }

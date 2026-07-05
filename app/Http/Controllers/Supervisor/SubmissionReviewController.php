@@ -3,12 +3,17 @@
 namespace App\Http\Controllers\Supervisor;
 
 use App\Enums\CommitmentStatus;
+use App\Enums\ReviewTransferRequestStatus;
 use App\Enums\SubmissionStatus;
+use App\Enums\UserRole;
 use App\Http\Controllers\Controller;
 use App\Models\IpcrSubmission;
+use App\Models\SubmissionReviewTransferRequest;
+use App\Models\User;
 use App\Services\AuditLogger;
 use App\Services\IpcrFormRatingCalculator;
 use App\Services\IpcrSubmissionExportService;
+use App\Services\SupervisorTransferService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response as HttpResponse;
@@ -27,6 +32,16 @@ class SubmissionReviewController extends Controller
 
         return Inertia::render('Supervisor/SubmissionReview', [
             'submission' => $submission,
+            'supervisors' => User::query()
+                ->where('role', UserRole::Supervisor)
+                ->where('id', '!=', $supervisor->id)
+                ->orderBy('name')
+                ->get(['id', 'name', 'email']),
+            'pendingReviewTransfer' => SubmissionReviewTransferRequest::query()
+                ->with(['toSupervisor:id,name'])
+                ->where('ipcr_submission_id', $submission->id)
+                ->where('status', ReviewTransferRequestStatus::Pending)
+                ->first(),
         ]);
     }
 
@@ -62,9 +77,9 @@ class SubmissionReviewController extends Controller
             $data = array_merge($base, $request->validate([
                 'commitments' => ['required', 'array', 'min:1'],
                 'commitments.*.id' => ['required', 'integer'],
-                'commitments.*.rating_quality' => ['required', 'integer', 'min:1', 'max:5'],
-                'commitments.*.rating_efficiency' => ['required', 'integer', 'min:1', 'max:5'],
-                'commitments.*.rating_timeliness' => ['required', 'integer', 'min:1', 'max:5'],
+                'commitments.*.rating_quality' => ['nullable', 'integer', 'min:1', 'max:5'],
+                'commitments.*.rating_efficiency' => ['nullable', 'integer', 'min:1', 'max:5'],
+                'commitments.*.rating_timeliness' => ['nullable', 'integer', 'min:1', 'max:5'],
                 'commitments.*.rating_q3_target' => ['nullable', 'numeric', 'min:0'],
                 'commitments.*.rating_q3_actual' => ['nullable', 'numeric', 'min:0'],
                 'commitments.*.rating_q4_target' => ['nullable', 'numeric', 'min:0'],
@@ -102,6 +117,7 @@ class SubmissionReviewController extends Controller
             }
 
             $sumWeighted = 0.0;
+            $hasWeighted = false;
 
             foreach ($rows as $row) {
                 $commitment = $submission->commitments->firstWhere('id', (int) $row['id']);
@@ -117,6 +133,34 @@ class SubmissionReviewController extends Controller
                     $q4Target,
                     $q4Actual,
                 );
+
+                if ($commitment->weight === null) {
+                    $commitment->update([
+                        'rating_q3_target' => $q3Target,
+                        'rating_q3_actual' => $q3Actual,
+                        'rating_q4_target' => $q4Target,
+                        'rating_q4_actual' => $q4Actual,
+                        'rating_target_total' => $totals['target_total'],
+                        'rating_actual_total' => $totals['actual_total'],
+                        'rating_percent' => $totals['percent'],
+                        'rating_quality' => null,
+                        'rating_efficiency' => null,
+                        'rating_timeliness' => null,
+                        'rating_average' => null,
+                        'rating_weighted' => null,
+                        'remarks' => null,
+                    ]);
+
+                    continue;
+                }
+
+                foreach (['rating_quality', 'rating_efficiency', 'rating_timeliness'] as $field) {
+                    if (! isset($row[$field]) || ! is_numeric($row[$field])) {
+                        return back()->withErrors([
+                            'commitments' => 'Every commitment with a weight must have Quality, Efficiency, and Timeliness ratings (1–5).',
+                        ]);
+                    }
+                }
 
                 $scored = IpcrFormRatingCalculator::scoreRowFromRatings(
                     (int) $row['rating_quality'],
@@ -141,14 +185,15 @@ class SubmissionReviewController extends Controller
                     'remarks' => null,
                 ]);
 
-                $sumWeighted += $scored['weighted'];
+                $sumWeighted += $scored['weighted'] ?? 0.0;
+                $hasWeighted = true;
             }
 
             $submission->update([
                 'quality' => null,
                 'efficiency' => null,
                 'timeliness' => null,
-                'overall_rating' => round($sumWeighted, 2),
+                'overall_rating' => $hasWeighted ? round($sumWeighted, 2) : null,
                 'supervisor_feedback' => $data['supervisor_feedback'] ?? null,
                 'status' => SubmissionStatus::Approved,
                 'reviewed_at' => now(),
@@ -185,6 +230,11 @@ class SubmissionReviewController extends Controller
         }
 
         AuditLogger::log($supervisor->id, 'ipcr.reviewed', $submission, ['action' => $data['action']], $request);
+
+        app(SupervisorTransferService::class)->notifyReviewCompleted(
+            $submission->fresh(['employee', 'supervisor']),
+            $data['action'],
+        );
 
         return back()->with('status', 'Review saved.');
     }

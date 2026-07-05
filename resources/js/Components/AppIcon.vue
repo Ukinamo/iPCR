@@ -145,5 +145,20 @@ defineProps({
         <template v-else-if="name === 'building'">
             <path d="M2.25 21h19.5m-18-18v18m10.5-18v18m6-13.5V21M6.75 6.75h.75v-.75h-.75Zm0 3h.75v-.75h-.75Zm0 3h.75v-.75h-.75Zm0 3h.75v-.75h-.75Zm0 3h.75v-.75h-.75Zm3-12h.75v-.75h-.75Zm0 3h.75v-.75h-.75Zm0 3h.75v-.75h-.75Zm0 3h.75v-.75h-.75Zm0 3h.75v-.75h-.75Zm3-12h.75v-.75h-.75Zm0 3h.75v-.75h-.75Zm0 3h.75v-.75h-.75Zm0 3h.75v-.75h-.75Z" />
         </template>
+
+        <!-- bell -->
+        <template v-else-if="name === 'bell'">
+            <path d="M14.857 17.082a23.848 23.848 0 0 0 5.454-1.31A8.967 8.967 0 0 1 18 9.75V9A6 6 0 0 0 6 9v.75a8.967 8.967 0 0 1-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 0 1-5.714 0m5.714 0a3 3 0 1 1-5.714 0" />
+        </template>
+
+        <!-- paper-clip -->
+        <template v-else-if="name === 'paper-clip'">
+            <path d="m18.375 12.739-7.693 7.693a4.5 4.5 0 0 1-6.364-6.364l10.94-10.94A3 3 0 1 1 19.5 7.372L8.552 18.32m.009-.01-.01.01m5.699-9.941-7.81 7.81a1.5 1.5 0 0 0 2.112 2.13" />
+        </template>
+
+        <!-- x-mark -->
+        <template v-else-if="name === 'x-mark'">
+            <path d="M6 18 18 6M6 6l12 12" />
+        </template>
     </svg>
 </template>
