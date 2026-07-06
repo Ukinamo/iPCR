@@ -2,7 +2,7 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import AppIcon from '@/Components/AppIcon.vue';
 import EvidencePanel from '@/Components/EvidencePanel.vue';
-import IpcrExportDropdown from '@/Components/IpcrExportDropdown.vue';
+import IpcrPreviewLink from '@/Components/IpcrPreviewLink.vue';
 import InputError from '@/Components/InputError.vue';
 import InputLabel from '@/Components/InputLabel.vue';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
@@ -374,7 +374,7 @@ function badge(status) {
                         <AppIcon name="arrow-left" class="h-4 w-4" />
                         Back to dashboard
                     </Link>
-                    <IpcrExportDropdown v-if="isApproved" :submission-id="submission.id" />
+                    <IpcrPreviewLink v-if="isApproved" :submission-id="submission.id" />
                 </div>
             </div>
         </template>

@@ -20,6 +20,7 @@ class IpcrSubmission extends Model
         'timeliness',
         'overall_rating',
         'supervisor_feedback',
+        'commitment_statement',
         'submitted_at',
         'reviewed_at',
     ];

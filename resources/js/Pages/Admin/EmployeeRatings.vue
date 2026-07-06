@@ -2,7 +2,6 @@
 import AppIcon from '@/Components/AppIcon.vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import IpcrApprovedSubmissionPanel from '@/Components/IpcrApprovedSubmissionPanel.vue';
-import IpcrExportDropdown from '@/Components/IpcrExportDropdown.vue';
 import SecondaryButton from '@/Components/SecondaryButton.vue';
 import { Head, Link } from '@inertiajs/vue3';
 
@@ -28,12 +27,14 @@ defineProps({
                     </div>
                 </div>
                 <div class="flex flex-wrap items-center gap-2">
-                    <IpcrExportDropdown
+                    <a
                         v-if="submissions?.length"
-                        mode="admin-employee"
-                        :user-id="employee.id"
-                        label="Export all"
-                    />
+                        :href="route('admin.users.ratings.export', { user: employee.id, format: 'xlsx' })"
+                        class="inline-flex items-center gap-1.5 rounded-md bg-emerald-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700"
+                    >
+                        <AppIcon name="arrow-down-tray" class="h-4 w-4" />
+                        Export all (Excel)
+                    </a>
                     <Link :href="route('dashboard')" class="inline-flex">
                         <SecondaryButton type="button" class="inline-flex items-center gap-2">
                             <AppIcon name="arrow-left" class="h-4 w-4" />

@@ -3,7 +3,7 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import AppIcon from '@/Components/AppIcon.vue';
 import CommitmentIpcrTable from '@/Components/CommitmentIpcrTable.vue';
 import CommitmentPackageForm from '@/Components/CommitmentPackageForm.vue';
-import IpcrExportDropdown from '@/Components/IpcrExportDropdown.vue';
+import IpcrPreviewLink from '@/Components/IpcrPreviewLink.vue';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
 import SecondaryButton from '@/Components/SecondaryButton.vue';
 import { formatDecimal, formatWholeNumber } from '@/utils/numberFormat';
@@ -741,10 +741,9 @@ function formatWeighted(c) {
                             </div>
                             <div class="flex flex-wrap items-center gap-3">
                                 <p class="text-sm font-semibold text-amber-800">Overall: {{ s.overall_rating ?? '—' }}</p>
-                                <IpcrExportDropdown
+                                <IpcrPreviewLink
                                     :submission-id="s.id"
                                     mode="employee-submission"
-                                    label="Export"
                                 />
                             </div>
                         </div>

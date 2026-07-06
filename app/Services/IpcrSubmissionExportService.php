@@ -81,7 +81,12 @@ final class IpcrSubmissionExportService
 
     public static function download(IpcrSubmission $submission, string $format): StreamedResponse
     {
-        return self::downloadSpreadsheet(self::spreadsheet($submission), self::filename($submission, self::extensionForFormat($format)), $format);
+        return self::downloadSpreadsheet(
+            self::spreadsheet($submission),
+            self::filename($submission, self::extensionForFormat($format)),
+            $format,
+            allowPdf: true,
+        );
     }
 
     /**
@@ -95,12 +100,45 @@ final class IpcrSubmissionExportService
             $spreadsheet,
             self::employeeHistoryFilename($employee, self::extensionForFormat($format)),
             $format,
+            allowPdf: true,
         );
     }
 
     public static function inlinePrint(IpcrSubmission $submission): Response
     {
-        return self::inlinePrintSpreadsheet(self::spreadsheet($submission));
+        return response(
+            self::renderDocumentHtml($submission, autoPrint: true, showPrintButton: true),
+            200,
+            ['Content-Type' => 'text/html; charset=UTF-8'],
+        );
+    }
+
+    public static function renderDocumentHtml(
+        IpcrSubmission $submission,
+        bool $autoPrint = false,
+        bool $showPrintButton = false,
+    ): string {
+        $html = self::htmlFromSpreadsheet(self::spreadsheet($submission));
+
+        if ($showPrintButton) {
+            $html = self::wrapHtmlWithPrintButton($html);
+        }
+
+        if ($autoPrint) {
+            $html = self::wrapHtmlForSinglePagePrint($html, autoPrint: true);
+        }
+
+        return $html;
+    }
+
+    public static function htmlFromSpreadsheet(Spreadsheet $spreadsheet): string
+    {
+        $writer = new Html($spreadsheet);
+        $writer->setSheetIndex(0);
+        $writer->setGenerateSheetNavigationBlock(false);
+        $writer->setUseInlineCss(true);
+
+        return $writer->generateHtmlAll();
     }
 
     /**
@@ -111,18 +149,22 @@ final class IpcrSubmissionExportService
         return self::inlinePrintSpreadsheet(self::spreadsheetForEmployee($submissions, $employee));
     }
 
-    public static function downloadSpreadsheet(Spreadsheet $spreadsheet, string $filename, string $format): StreamedResponse
+    public static function downloadSpreadsheet(Spreadsheet $spreadsheet, string $filename, string $format, bool $allowPdf = false): StreamedResponse
     {
         return match ($format) {
             'csv' => self::streamCsv($spreadsheet, $filename),
-            'pdf' => self::streamPdf($spreadsheet, $filename, true),
+            'pdf' => $allowPdf
+                ? self::streamPdf($spreadsheet, $filename, true)
+                : throw new \InvalidArgumentException('PDF export is not supported for this spreadsheet.'),
             default => self::streamXlsx($spreadsheet, $filename),
         };
     }
 
     public static function inlinePrintSpreadsheet(Spreadsheet $spreadsheet): Response
     {
-        return response(self::htmlForSinglePagePrint($spreadsheet), 200, [
+        $html = self::htmlFromSpreadsheet($spreadsheet);
+
+        return response(self::wrapHtmlForSinglePagePrint($html, autoPrint: true), 200, [
             'Content-Type' => 'text/html; charset=UTF-8',
         ]);
     }
@@ -138,30 +180,42 @@ final class IpcrSubmissionExportService
 
     private static function htmlForSinglePagePrint(Spreadsheet $spreadsheet): string
     {
-        $writer = new Html($spreadsheet);
-        $writer->setSheetIndex(0);
-        $writer->setGenerateSheetNavigationBlock(false);
-        $writer->setUseInlineCss(true);
-
-        return self::wrapHtmlForSinglePagePrint($writer->generateHtmlAll());
+        return self::wrapHtmlForSinglePagePrint(self::htmlFromSpreadsheet($spreadsheet), autoPrint: true);
     }
 
-    private static function wrapHtmlForSinglePagePrint(string $html): string
+    private static function wrapHtmlWithPrintButton(string $html): string
+    {
+        $button = <<<'HTML'
+<div class="no-print" style="text-align:right;margin:12px;">
+<button type="button" onclick="window.print()" style="background:#2c3e50;color:#fff;border:none;padding:8px 18px;border-radius:4px;cursor:pointer;font-size:14px;">Print / Save as PDF</button>
+</div>
+HTML;
+
+        if (preg_match('/<body[^>]*>/i', $html)) {
+            return preg_replace('/<body([^>]*)>/i', '<body$1>'.$button, $html, 1);
+        }
+
+        return $button.$html;
+    }
+
+    private static function wrapHtmlForSinglePagePrint(string $html, bool $autoPrint = true): string
     {
         $printStyles = <<<'CSS'
 <style type="text/css" id="ipcr-print-fit">
-@page { size: legal landscape; margin: 0.2in; }
+@page { size: letter portrait; margin: 0.2in; }
 html, body { margin: 0 !important; padding: 0 !important; overflow: hidden !important; background: #fff; }
 .scrpgbrk, div + div { page-break-before: auto !important; }
 .navigation { display: none !important; }
+.no-print { display: block; }
 #ipcr-print-root { transform-origin: top left; }
 @media print {
   html, body { overflow: visible !important; height: auto !important; }
+  .no-print { display: none !important; }
 }
 </style>
 CSS;
 
-        $printScript = <<<'JS'
+        $printScript = $autoPrint ? <<<'JS'
 <script>
 (function () {
     function fitToOnePage() {
@@ -173,8 +227,8 @@ CSS;
         root.style.transform = 'none';
         root.style.zoom = '1';
 
-        var pageW = 13.6 * 96;
-        var pageH = 8.1 * 96;
+        var pageW = 8.1 * 96;
+        var pageH = 10.6 * 96;
         var w = root.scrollWidth || root.offsetWidth;
         var h = root.scrollHeight || root.offsetHeight;
 
@@ -198,7 +252,7 @@ CSS;
     window.addEventListener('beforeprint', fitToOnePage);
 })();
 </script>
-JS;
+JS : '';
 
         if (str_contains($html, '</head>')) {
             $html = str_replace('</head>', $printStyles."\n</head>", $html);

@@ -134,21 +134,23 @@ final class IpcrApprovedFormExporter
 
     private static function fillSheet(Worksheet $sheet, IpcrSubmission $submission, User $employee): void
     {
-        $institution = (string) config('app.name', 'I-PERFORM');
-        $employeeName = strtoupper($employee->name);
-        $employeeRole = ucwords(strtolower($employee->role?->value ?? 'Employee'));
+        $office = (string) config('ipcr.office_name', 'CHED – MIMAROPA Regional Office');
 
-        $sheet->setCellValue('A3', $institution);
+        $sheet->setCellValue('A3', $office);
         $sheet->setCellValue(
             'A5',
-            "I, {$employeeName}, {$employeeRole}, of {$institution}, commit to deliver and agree to be rated on the attainment "
-            .'of the following targets in accordance with the indicated measures for the period '
+            IpcrFormViewDataBuilder::resolveCommitmentStatement($submission, $employee),
         );
         $sheet->setCellValue('A6', self::periodWindow($submission));
 
         $styleReference = IOFactory::load(self::templatePath())->getActiveSheet();
-        $otherRow = self::findRow($sheet, 'Other Strategic Assignments');
-        $sheet->removeRow(19, $otherRow - 19);
+        $dataAnchorRow = 19;
+        $totalRow = self::findRow($sheet, 'TOTAL');
+        $placeholderRows = $totalRow - $dataAnchorRow;
+
+        if ($placeholderRows > 0) {
+            $sheet->removeRow($dataAnchorRow, $placeholderRows);
+        }
 
         $commitments = $submission->commitments->sortBy([
             fn (Commitment $c) => $c->function_type === 'core' ? 0 : 1,
@@ -160,10 +162,10 @@ final class IpcrApprovedFormExporter
         $neededRows = self::countNeededDataRows($core, $strategic);
 
         if ($neededRows > 0) {
-            $sheet->insertNewRowBefore(19, $neededRows);
+            $sheet->insertNewRowBefore($dataAnchorRow, $neededRows);
         }
 
-        $row = 19;
+        $row = $dataAnchorRow;
 
         if ($core->isNotEmpty()) {
             $row = self::writeSectionHeader($sheet, $row, 'CORE FUNCTIONS ('.self::pctLabel((float) $core->sum('weight')).')', $styleReference, 19);
@@ -171,7 +173,7 @@ final class IpcrApprovedFormExporter
         }
 
         if ($strategic->isNotEmpty()) {
-            $row = self::writeSectionHeader($sheet, $row, 'STRATEGIC FUNCTIONS ('.self::pctLabel((float) $strategic->sum('weight')).')', $styleReference, 35);
+            $row = self::writeSectionHeader($sheet, $row, 'STRATEGIC FUNCTIONS ('.self::pctLabel((float) $strategic->sum('weight')).')', $styleReference, 19);
             $row = self::writeCommitmentGroups($sheet, $row, $strategic, $styleReference);
         }
 
@@ -181,8 +183,7 @@ final class IpcrApprovedFormExporter
         $finalRow = self::findRow($sheet, 'FINAL AVERAGE RATING');
         self::patchFinalRatingRow($sheet, $finalRow, $submission, $styleReference);
 
-        $dataEndRow = self::findRow($sheet, 'Other Strategic Assignments') - 1;
-        self::finalizeSheetLayout($sheet, 19, max(19, $dataEndRow));
+        self::finalizeSheetLayout($sheet, $dataAnchorRow, max($dataAnchorRow, $totalRow - 1));
     }
 
     /**
@@ -417,6 +418,7 @@ final class IpcrApprovedFormExporter
 
         self::applyThinBorders($sheet, self::cell(1, $start).':'.self::col(self::LAST_COL).$end);
         self::applyTextCellAlignment($sheet, $start, $end);
+        self::applyDataColumnAlignment($sheet, $start, $end);
 
         return $end + 1;
     }
@@ -465,6 +467,8 @@ final class IpcrApprovedFormExporter
         if ($commitments->contains(fn (Commitment $c) => self::weightedRemarkScore($c) !== null)) {
             $sheet->setCellValue(self::cell(self::COL_REMARKS, $row), $weightedSum);
         }
+
+        self::applyDataColumnAlignment($sheet, $row, $row);
     }
 
     private static function patchFinalRatingRow(Worksheet $sheet, int $row, IpcrSubmission $submission, Worksheet $styleReference): void
@@ -590,29 +594,13 @@ final class IpcrApprovedFormExporter
 
     private static function finalizeSheetLayout(Worksheet $sheet, int $dataStartRow, int $dataEndRow): void
     {
-        self::applyColumnWidths($sheet);
         self::applyHeaderReadability($sheet);
         self::applyCommitmentTextReadability($sheet, $dataStartRow, $dataEndRow);
-        self::improveLegendAndRatingScale($sheet);
+        self::applyDataColumnAlignment($sheet, $dataStartRow, $dataEndRow);
 
         $highestRow = $sheet->getHighestRow();
         $printArea = 'A1:'.self::col(self::LAST_COL).$highestRow;
-
-        $pageSetup = $sheet->getPageSetup();
-        $pageSetup->setOrientation(PageSetup::ORIENTATION_LANDSCAPE);
-        $pageSetup->setPaperSize(PageSetup::PAPERSIZE_LEGAL);
-        $pageSetup->setFitToPage(true);
-        $pageSetup->setFitToWidth(1);
-        $pageSetup->setFitToHeight(1);
-        $pageSetup->setPrintArea($printArea);
-
-        $margins = $sheet->getPageMargins();
-        $margins->setTop(0.25);
-        $margins->setBottom(0.25);
-        $margins->setLeft(0.25);
-        $margins->setRight(0.25);
-        $margins->setHeader(0.1);
-        $margins->setFooter(0.1);
+        $sheet->getPageSetup()->setPrintArea($printArea);
     }
 
     private static function applyColumnWidths(Worksheet $sheet): void
@@ -689,7 +677,7 @@ final class IpcrApprovedFormExporter
                 continue;
             }
 
-            self::applyTextCellAlignment($sheet, $row, $row);
+            self::applyFunctionIndicatorAlignment($sheet, $row, $row);
             self::autoFitRowHeight($sheet, $row, [
                 [self::COL_FUNCTION, 24],
                 [self::COL_INDICATOR, 38],
@@ -702,26 +690,39 @@ final class IpcrApprovedFormExporter
 
     private static function applyTextCellAlignment(Worksheet $sheet, int $startRow, int $endRow): void
     {
-        $textColumns = [
-            self::COL_FUNCTION,
-            self::COL_INDICATOR,
-            self::COL_OFFICE_TARGET,
-            self::COL_INDIVIDUAL_TARGET,
-            self::COL_REMARKS,
-        ];
+        self::applyFunctionIndicatorAlignment($sheet, $startRow, $endRow);
 
-        foreach ($textColumns as $col) {
+        foreach ([self::COL_OFFICE_TARGET, self::COL_INDIVIDUAL_TARGET, self::COL_REMARKS] as $col) {
             $range = self::cell($col, $startRow).':'.self::cell($col, $endRow);
             $sheet->getStyle($range)
                 ->getAlignment()
                 ->setWrapText(true)
-                ->setVertical(Alignment::VERTICAL_TOP);
+                ->setVertical(Alignment::VERTICAL_BOTTOM)
+                ->setHorizontal(Alignment::HORIZONTAL_CENTER);
+        }
+    }
 
-            if ($col === self::COL_FUNCTION || $col === self::COL_INDICATOR) {
-                $sheet->getStyle($range)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_LEFT);
-            } else {
-                $sheet->getStyle($range)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
-            }
+    private static function applyFunctionIndicatorAlignment(Worksheet $sheet, int $startRow, int $endRow): void
+    {
+        foreach ([self::COL_FUNCTION, self::COL_INDICATOR] as $col) {
+            $range = self::cell($col, $startRow).':'.self::cell($col, $endRow);
+            $sheet->getStyle($range)
+                ->getAlignment()
+                ->setWrapText(true)
+                ->setVertical(Alignment::VERTICAL_TOP)
+                ->setHorizontal(Alignment::HORIZONTAL_LEFT);
+        }
+    }
+
+    private static function applyDataColumnAlignment(Worksheet $sheet, int $startRow, int $endRow): void
+    {
+        for ($col = self::COL_WEIGHT; $col <= self::COL_REMARKS; $col++) {
+            $range = self::cell($col, $startRow).':'.self::cell($col, $endRow);
+            $sheet->getStyle($range)
+                ->getAlignment()
+                ->setWrapText(true)
+                ->setVertical(Alignment::VERTICAL_BOTTOM)
+                ->setHorizontal(Alignment::HORIZONTAL_CENTER);
         }
     }
 

@@ -27,7 +27,7 @@ echo PHP_EOL.'=== MERGED CELLS ==='.PHP_EOL;
 foreach ($sheet->getMergeCells() as $merge) {
     echo $merge.PHP_EOL;
 }
-
+  
 echo PHP_EOL.'=== CELL VALUES (non-empty) ==='.PHP_EOL;
 for ($r = 1; $r <= $maxRow; $r++) {
     $rowVals = [];

@@ -1,5 +1,5 @@
 <script setup>
-import IpcrExportDropdown from '@/Components/IpcrExportDropdown.vue';
+import IpcrPreviewLink from '@/Components/IpcrPreviewLink.vue';
 import { formatDecimal, formatWholeNumber } from '@/utils/numberFormat';
 
 defineProps({
@@ -90,7 +90,7 @@ function formatReviewed(iso) {
                 <p v-if="submission.overall_rating != null" class="text-lg font-bold text-amber-800">
                     Overall: {{ formatDecimal(submission.overall_rating, 2) }}
                 </p>
-                <IpcrExportDropdown v-if="showExport" mode="admin-submission" :submission-id="submission.id" />
+                <IpcrPreviewLink v-if="showExport" mode="admin-submission" :submission-id="submission.id" />
             </div>
         </div>
         <div class="overflow-x-auto">

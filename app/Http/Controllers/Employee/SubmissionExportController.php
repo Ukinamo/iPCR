@@ -6,7 +6,6 @@ use App\Http\Controllers\Controller;
 use App\Models\IpcrSubmission;
 use App\Services\IpcrSubmissionExportService;
 use Illuminate\Http\Request;
-use Illuminate\Http\Response as HttpResponse;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class SubmissionExportController extends Controller
@@ -18,12 +17,5 @@ class SubmissionExportController extends Controller
         $submission = IpcrSubmissionExportService::authorizeEmployeeExport($request, $submission);
 
         return IpcrSubmissionExportService::download($submission, $format);
-    }
-
-    public function print(Request $request, IpcrSubmission $submission): HttpResponse
-    {
-        $submission = IpcrSubmissionExportService::authorizeEmployeeExport($request, $submission);
-
-        return IpcrSubmissionExportService::inlinePrint($submission);
     }
 }

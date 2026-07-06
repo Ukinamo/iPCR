@@ -10,6 +10,7 @@ use App\Http\Controllers\Employee\CommitmentController;
 use App\Http\Controllers\Employee\RatingHistoryExportController;
 use App\Http\Controllers\Employee\SubmissionExportController;
 use App\Http\Controllers\Employee\SubmissionController;
+use App\Http\Controllers\IpcrFormPreviewController;
 use App\Http\Controllers\LandingController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\ProfileController;
@@ -38,19 +39,25 @@ Route::middleware(['auth', 'verified', 'active'])->group(function () {
         Route::post('accomplishments', [AccomplishmentController::class, 'store'])->name('accomplishments.store');
         Route::delete('accomplishments/{accomplishment}', [AccomplishmentController::class, 'destroy'])->name('accomplishments.destroy');
         Route::get('ratings/history-export', RatingHistoryExportController::class)->name('ratings.history.export');
+        Route::get('submissions/{submission}/preview', [IpcrFormPreviewController::class, 'show'])->name('submissions.preview');
+        Route::patch('submissions/{submission}/commitment-statement', [IpcrFormPreviewController::class, 'updateCommitment'])->name('submissions.commitment-statement');
+        Route::get('submissions/{submission}/document', [IpcrFormPreviewController::class, 'document'])->name('submissions.document');
         Route::get('submissions/{submission}/export/{format?}', [SubmissionExportController::class, 'export'])
             ->where('format', 'xlsx|csv|pdf')
             ->name('submissions.export');
-        Route::get('submissions/{submission}/print', [SubmissionExportController::class, 'print'])->name('submissions.print');
+        Route::get('submissions/{submission}/print', [IpcrFormPreviewController::class, 'print'])->name('submissions.print');
         Route::post('submissions', [SubmissionController::class, 'store'])->name('submissions.store');
     });
 
     Route::middleware('role:supervisor')->prefix('supervisor')->name('supervisor.')->group(function () {
         Route::get('submissions/{submission}', [SubmissionReviewController::class, 'show'])->name('submissions.show');
+        Route::get('submissions/{submission}/preview', [IpcrFormPreviewController::class, 'show'])->name('submissions.preview');
+        Route::patch('submissions/{submission}/commitment-statement', [IpcrFormPreviewController::class, 'updateCommitment'])->name('submissions.commitment-statement');
+        Route::get('submissions/{submission}/document', [IpcrFormPreviewController::class, 'document'])->name('submissions.document');
         Route::get('submissions/{submission}/export/{format?}', [SubmissionReviewController::class, 'export'])
             ->where('format', 'xlsx|csv|pdf')
             ->name('submissions.export');
-        Route::get('submissions/{submission}/print', [SubmissionReviewController::class, 'print'])->name('submissions.print');
+        Route::get('submissions/{submission}/print', [IpcrFormPreviewController::class, 'print'])->name('submissions.print');
         Route::patch('submissions/{submission}', [SubmissionReviewController::class, 'update'])->name('submissions.update');
         Route::post('submissions/{submission}/review-transfers', [SubmissionReviewTransferController::class, 'store'])->name('submissions.review-transfers.store');
         Route::delete('review-transfers/{reviewTransfer}', [SubmissionReviewTransferController::class, 'destroy'])->name('review-transfers.destroy');
@@ -61,10 +68,13 @@ Route::middleware(['auth', 'verified', 'active'])->group(function () {
     });
 
     Route::middleware('role:administrator')->prefix('admin')->name('admin.')->group(function () {
+        Route::get('submissions/{submission}/preview', [IpcrFormPreviewController::class, 'show'])->name('submissions.preview');
+        Route::patch('submissions/{submission}/commitment-statement', [IpcrFormPreviewController::class, 'updateCommitment'])->name('submissions.commitment-statement');
+        Route::get('submissions/{submission}/document', [IpcrFormPreviewController::class, 'document'])->name('submissions.document');
         Route::get('submissions/{submission}/export/{format?}', [EmployeeRatingController::class, 'exportSubmission'])
             ->where('format', 'xlsx|csv|pdf')
             ->name('submissions.export');
-        Route::get('submissions/{submission}/print', [EmployeeRatingController::class, 'printSubmission'])->name('submissions.print');
+        Route::get('submissions/{submission}/print', [IpcrFormPreviewController::class, 'print'])->name('submissions.print');
         Route::get('users/{user}/ratings/export/{format?}', [EmployeeRatingController::class, 'export'])
             ->where('format', 'xlsx|csv|pdf')
             ->name('users.ratings.export');

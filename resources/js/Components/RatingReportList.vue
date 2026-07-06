@@ -1,6 +1,6 @@
 <script setup>
 import AppIcon from '@/Components/AppIcon.vue';
-import IpcrExportDropdown from '@/Components/IpcrExportDropdown.vue';
+import IpcrPreviewLink from '@/Components/IpcrPreviewLink.vue';
 import { formatDecimal } from '@/utils/numberFormat';
 import { Link, router } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
@@ -208,7 +208,7 @@ function applyMonthFilter() {
                                         <AppIcon name="eye" class="h-3.5 w-3.5" />
                                         View
                                     </Link>
-                                    <IpcrExportDropdown mode="admin-submission" :submission-id="s.id" />
+                                    <IpcrPreviewLink mode="admin-submission" :submission-id="s.id" label="Preview" />
                                 </div>
                             </td>
                         </tr>
