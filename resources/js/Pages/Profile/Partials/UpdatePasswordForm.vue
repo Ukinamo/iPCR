@@ -1,6 +1,7 @@
 <script setup>
 import InputError from '@/Components/InputError.vue';
 import InputLabel from '@/Components/InputLabel.vue';
+import PasswordRequirements from '@/Components/PasswordRequirements.vue';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
 import TextInput from '@/Components/TextInput.vue';
 import { useForm } from '@inertiajs/vue3';
@@ -41,8 +42,7 @@ const updatePassword = () => {
             </h2>
 
             <p class="mt-1 text-sm text-gray-600">
-                Ensure your account is using a long, random password to stay
-                secure.
+                Use a strong password that meets the requirements below.
             </p>
         </header>
 
@@ -78,6 +78,7 @@ const updatePassword = () => {
                 />
 
                 <InputError :message="form.errors.password" class="mt-2" />
+                <PasswordRequirements :password="form.password" show-checks />
             </div>
 
             <div>

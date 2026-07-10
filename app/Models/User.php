@@ -12,13 +12,19 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Storage;
 
-#[Fillable(['name', 'email', 'password', 'role', 'account_status', 'supervisor_id'])]
+#[Fillable(['name', 'email', 'password', 'role', 'account_status', 'supervisor_id', 'profile_photo_path'])]
 #[Hidden(['password', 'remember_token'])]
 class User extends Authenticatable
 {
     /** @use HasFactory<UserFactory> */
     use HasFactory, Notifiable;
+
+    protected $appends = [
+        'profile_photo_url',
+    ];
 
     protected function casts(): array
     {
@@ -83,5 +89,20 @@ class User extends Authenticatable
     public function isPending(): bool
     {
         return $this->account_status === AccountStatus::Pending;
+    }
+
+    public function getProfilePhotoUrlAttribute(): ?string
+    {
+        if ($this->profile_photo_path === null) {
+            return null;
+        }
+
+        if (! app()->runningInConsole() && Route::has('users.profile-photo')) {
+            $version = $this->updated_at?->timestamp ?? time();
+
+            return route('users.profile-photo', $this->id).'?v='.$version;
+        }
+
+        return Storage::disk('public')->url($this->profile_photo_path);
     }
 }

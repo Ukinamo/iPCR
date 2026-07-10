@@ -4,6 +4,8 @@ namespace Tests\Feature;
 
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 class ProfileTest extends TestCase
@@ -68,7 +70,7 @@ class ProfileTest extends TestCase
         $response = $this
             ->actingAs($user)
             ->delete('/profile', [
-                'password' => 'password',
+                'password' => 'Password1!',
             ]);
 
         $response
@@ -95,5 +97,77 @@ class ProfileTest extends TestCase
             ->assertRedirect('/profile');
 
         $this->assertNotNull($user->fresh());
+    }
+
+    public function test_profile_photo_can_be_uploaded(): void
+    {
+        Storage::fake('public');
+
+        $user = User::factory()->create();
+
+        $response = $this
+            ->actingAs($user)
+            ->post('/profile/photo', [
+                'photo' => UploadedFile::fake()->image('avatar.jpg'),
+            ]);
+
+        $response
+            ->assertSessionHasNoErrors()
+            ->assertRedirect('/profile');
+
+        $user->refresh();
+
+        $this->assertNotNull($user->profile_photo_path);
+        Storage::disk('public')->assertExists($user->profile_photo_path);
+        $this->assertNotNull($user->profile_photo_url);
+    }
+
+    public function test_profile_photo_can_be_removed(): void
+    {
+        Storage::fake('public');
+
+        $user = User::factory()->create();
+
+        $this
+            ->actingAs($user)
+            ->post('/profile/photo', [
+                'photo' => UploadedFile::fake()->image('avatar.jpg'),
+            ]);
+
+        $path = $user->refresh()->profile_photo_path;
+
+        $response = $this
+            ->actingAs($user)
+            ->delete('/profile/photo');
+
+        $response
+            ->assertSessionHasNoErrors()
+            ->assertRedirect('/profile');
+
+        $user->refresh();
+
+        $this->assertNull($user->profile_photo_path);
+        Storage::disk('public')->assertMissing($path);
+    }
+
+    public function test_profile_photo_can_be_served(): void
+    {
+        Storage::fake('public');
+
+        $user = User::factory()->create();
+
+        $this
+            ->actingAs($user)
+            ->post('/profile/photo', [
+                'photo' => UploadedFile::fake()->image('avatar.jpg'),
+            ]);
+
+        $user->refresh();
+
+        $response = $this
+            ->actingAs($user)
+            ->get(route('users.profile-photo', $user));
+
+        $response->assertOk();
     }
 }

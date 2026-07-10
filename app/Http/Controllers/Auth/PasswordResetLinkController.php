@@ -3,17 +3,20 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
+use App\Services\PasswordResetOtpService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Password;
-use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class PasswordResetLinkController extends Controller
 {
+    public function __construct(
+        private readonly PasswordResetOtpService $passwordResetOtpService,
+    ) {}
+
     /**
-     * Display the password reset link request view.
+     * Display the password reset request view.
      */
     public function create(): Response
     {
@@ -23,29 +26,43 @@ class PasswordResetLinkController extends Controller
     }
 
     /**
-     * Handle an incoming password reset link request.
-     *
-     * @throws ValidationException
+     * Send a one-time password to the user's email address.
      */
     public function store(Request $request): RedirectResponse
     {
         $request->validate([
-            'email' => 'required|email',
+            'email' => ['required', 'email'],
         ]);
 
-        // We will send the password reset link to this user. Once we have attempted
-        // to send the link, we will examine the response then see the message we
-        // need to show to the user. Finally, we'll send out a proper response.
-        $status = Password::sendResetLink(
-            $request->only('email')
-        );
+        $email = $request->string('email')->lower()->value();
 
-        if ($status == Password::RESET_LINK_SENT) {
-            return back()->with('status', __($status));
+        $result = $this->passwordResetOtpService->sendOtp($email);
+
+        $canonicalEmail = $result['email'] ?? $email;
+
+        $redirect = redirect()
+            ->route('password.reset', ['email' => $canonicalEmail])
+            ->with('status', $this->statusMessage($result));
+
+        if ($result !== null && isset($result['dev_otp'])) {
+            $redirect->with('dev_otp', $result['dev_otp']);
         }
 
-        throw ValidationException::withMessages([
-            'email' => [trans($status)],
-        ]);
+        return $redirect;
+    }
+
+    private function statusMessage(?array $result): string
+    {
+        if ($result !== null && ($result['throttled'] ?? false)) {
+            $seconds = $result['retry_after'] ?? 30;
+
+            return "A verification code was sent recently. Check your email, or wait {$seconds} seconds to request a new one.";
+        }
+
+        if ($result !== null && isset($result['dev_otp'])) {
+            return 'Verification code generated. In local development the code is shown on the next screen because mail is set to log.';
+        }
+
+        return 'We emailed you a 6-digit verification code. Enter it below to reset your password.';
     }
 }

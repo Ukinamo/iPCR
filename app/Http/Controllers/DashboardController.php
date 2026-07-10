@@ -269,6 +269,18 @@ class DashboardController extends Controller
             'reviewMonths' => app(ReportController::class)->approvedReviewMonths(),
             'analytics' => app(AdminAnalyticsService::class)->snapshot(),
             'pendingTransferCount' => SupervisorTransferRequest::where('status', TransferRequestStatus::Pending)->count(),
+            'pendingTransferRequests' => SupervisorTransferRequest::query()
+                ->with(['employee:id,name,email', 'requestedBy:id,name,email', 'fromSupervisor:id,name', 'toSupervisor:id,name'])
+                ->where('status', TransferRequestStatus::Pending)
+                ->orderBy('created_at')
+                ->get(),
+            'recentTransferRequests' => SupervisorTransferRequest::query()
+                ->with(['employee:id,name,email', 'requestedBy:id,name,email', 'fromSupervisor:id,name', 'toSupervisor:id,name', 'reviewedBy:id,name'])
+                ->whereIn('status', [TransferRequestStatus::Approved, TransferRequestStatus::Rejected, TransferRequestStatus::Cancelled])
+                ->orderByDesc('reviewed_at')
+                ->orderByDesc('updated_at')
+                ->take(20)
+                ->get(),
             'supervisors' => User::query()
                 ->where('role', UserRole::Supervisor)
                 ->orderBy('name')

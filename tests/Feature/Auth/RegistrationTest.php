@@ -24,8 +24,8 @@ class RegistrationTest extends TestCase
         $response = $this->post('/register', [
             'name' => 'Test User',
             'email' => 'test@example.com',
-            'password' => 'password',
-            'password_confirmation' => 'password',
+            'password' => 'Password1!',
+            'password_confirmation' => 'Password1!',
         ]);
 
         $this->assertGuest();
@@ -44,16 +44,29 @@ class RegistrationTest extends TestCase
     {
         User::factory()->create([
             'email' => 'pending@example.com',
-            'password' => 'password',
+            'password' => 'Password1!',
             'account_status' => AccountStatus::Pending,
         ]);
 
         $response = $this->post('/login', [
             'email' => 'pending@example.com',
-            'password' => 'password',
+            'password' => 'Password1!',
         ]);
 
         $this->assertGuest();
         $response->assertSessionHasErrors('email');
+    }
+
+    public function test_weak_passwords_are_rejected_on_registration(): void
+    {
+        $response = $this->post('/register', [
+            'name' => 'Test User',
+            'email' => 'test@example.com',
+            'password' => 'password',
+            'password_confirmation' => 'password',
+        ]);
+
+        $response->assertSessionHasErrors('password');
+        $this->assertGuest();
     }
 }

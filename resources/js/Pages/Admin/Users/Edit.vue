@@ -2,6 +2,7 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import InputError from '@/Components/InputError.vue';
 import InputLabel from '@/Components/InputLabel.vue';
+import PasswordRequirements from '@/Components/PasswordRequirements.vue';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
 import { Head, Link, useForm } from '@inertiajs/vue3';
 
@@ -62,6 +63,7 @@ function submit() {
                             <InputLabel for="password" value="New password (optional)" />
                             <input id="password" v-model="form.password" type="password" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm" />
                             <InputError class="mt-2" :message="form.errors.password" />
+                            <PasswordRequirements :password="form.password" show-checks />
                         </div>
                         <div>
                             <InputLabel for="role" value="Role" />

@@ -47,7 +47,7 @@ const roles = [
             </div>
 
             <div class="mt-6 rounded-lg border border-white/5 bg-slate-950/60 p-3 text-xs text-slate-400">
-                Demo tip: seeded accounts use password <span class="font-mono text-slate-200">password</span>. Registration creates an employee account.
+                Demo tip: seeded accounts use password <span class="font-mono text-slate-200">Password1!</span>. Registration creates an employee account.
             </div>
         </div>
 

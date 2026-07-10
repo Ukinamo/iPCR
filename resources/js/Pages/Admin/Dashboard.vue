@@ -1,11 +1,12 @@
 <script setup>
 import AdminAnalyticsPanel from '@/Components/AdminAnalyticsPanel.vue';
+import AdminTransferRequestsPanel from '@/Components/AdminTransferRequestsPanel.vue';
 import AppIcon from '@/Components/AppIcon.vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import RatingReportList from '@/Components/RatingReportList.vue';
 import SecondaryButton from '@/Components/SecondaryButton.vue';
 import { Head, Link, router } from '@inertiajs/vue3';
-import { ref } from 'vue';
+import { onMounted, ref } from 'vue';
 
 defineProps({
     stats: Object,
@@ -26,9 +27,25 @@ defineProps({
         type: Number,
         default: 0,
     },
+    pendingTransferRequests: {
+        type: Array,
+        default: () => [],
+    },
+    recentTransferRequests: {
+        type: Array,
+        default: () => [],
+    },
 });
 
 const tab = ref('users');
+
+onMounted(() => {
+    const params = new URLSearchParams(window.location.search);
+
+    if (params.get('tab') === 'transfers') {
+        tab.value = 'transfers';
+    }
+});
 
 const statCards = [
     { key: 'totalUsers', label: 'Total Users', icon: 'users', tone: 'bg-violet-100 text-violet-700' },
@@ -42,7 +59,7 @@ const tabs = [
     { id: 'users', label: 'User Management', icon: 'users' },
     { id: 'reports', label: 'Reports', icon: 'document-chart-bar' },
     { id: 'analytics', label: 'Analytics', icon: 'chart-bar' },
-    { id: 'settings', label: 'Settings', icon: 'cog' },
+    { id: 'transfers', label: 'Transfer Requests', icon: 'users' },
 ];
 
 function roleBadge(role) {
@@ -107,7 +124,7 @@ function destroyUser(id) {
                     <p>
                         <span class="font-semibold">{{ pendingTransferCount }} supervisor transfer request(s)</span>
                         need your approval.
-                        <Link :href="route('admin.transfer-requests.index')" class="ml-1 inline-flex items-center gap-1 font-semibold text-blue-900 underline hover:text-blue-950">
+                        <Link :href="`${route('dashboard')}?tab=transfers`" class="ml-1 inline-flex items-center gap-1 font-semibold text-blue-900 underline hover:text-blue-950">
                             Review transfers
                             <AppIcon name="arrow-top-right" class="h-3.5 w-3.5" />
                         </Link>
@@ -139,6 +156,12 @@ function destroyUser(id) {
                     >
                         <AppIcon :name="item.icon" class="h-4 w-4 shrink-0" />
                         {{ item.label }}
+                        <span
+                            v-if="item.id === 'transfers' && pendingTransferCount > 0"
+                            class="rounded-full bg-amber-600 px-2 py-0.5 text-xs font-bold text-white"
+                        >
+                            {{ pendingTransferCount }}
+                        </span>
                     </button>
                 </div>
 
@@ -270,13 +293,11 @@ function destroyUser(id) {
                     <AdminAnalyticsPanel :analytics="analytics" />
                 </div>
 
-                <div v-show="tab === 'settings'" class="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-                    <div class="flex items-start gap-3 text-sm text-slate-600">
-                        <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-500">
-                            <AppIcon name="cog" class="h-5 w-5" />
-                        </span>
-                        <p>Institution-wide evaluation cycles, notification templates, and MFA policies can be centralized here in a future iteration.</p>
-                    </div>
+                <div v-show="tab === 'transfers'" class="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+                    <AdminTransferRequestsPanel
+                        :pending-requests="pendingTransferRequests"
+                        :recent-requests="recentTransferRequests"
+                    />
                 </div>
 
                 <div class="flex items-start gap-3 rounded-lg border border-amber-100 bg-amber-50 p-4 text-sm text-amber-900">

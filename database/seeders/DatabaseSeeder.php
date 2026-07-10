@@ -18,40 +18,40 @@ class DatabaseSeeder extends Seeder
         User::factory()->administrator()->create([
             'name' => 'Rey Administrator',
             'email' => 'rey@admin.com',
-            'password' => 'password',
+            'password' => 'Password1!',
         ]);
 
         $supervisor = User::factory()->supervisor()->create([
             'name' => 'Rey Supervisor',
             'email' => 'rey@supervisor.com',
-            'password' => 'password',
+            'password' => 'Password1!',
         ]);
 
         $maria = User::factory()->employee()->create([
             'name' => 'Maria Santos',
             'email' => 'maria.santos@ched.gov.ph',
-            'password' => 'password',
+            'password' => 'Password1!',
             'supervisor_id' => $supervisor->id,
         ]);
 
         $juan = User::factory()->employee()->create([
             'name' => 'Juan Dela Cruz',
             'email' => 'juan.delacruz@ched.gov.ph',
-            'password' => 'password',
+            'password' => 'Password1!',
             'supervisor_id' => $supervisor->id,
         ]);
 
         $ana = User::factory()->employee()->create([
             'name' => 'Ana Rodriguez',
             'email' => 'ana.rodriguez@ched.gov.ph',
-            'password' => 'password',
+            'password' => 'Password1!',
             'supervisor_id' => $supervisor->id,
         ]);
 
         User::factory()->employee()->create([
             'name' => 'Carlos Lopez',
             'email' => 'carlos.lopez@ched.gov.ph',
-            'password' => 'password',
+            'password' => 'Password1!',
             'supervisor_id' => $supervisor->id,
             'account_status' => AccountStatus::Inactive,
         ]);
@@ -167,7 +167,7 @@ class DatabaseSeeder extends Seeder
             'overall_rating' => round($s1['weighted'] + $s2['weighted'], 2),
         ]);
 
-        $this->command?->info('I-PERFORM demo (password: password)');
+        $this->command?->info('I-PERFORM demo (password: Password1!)');
         $this->command?->info('Administrator: rey@admin.com');
         $this->command?->info('Supervisor: rey@supervisor.com');
         $this->command?->info('Employees: maria.santos@ched.gov.ph, juan.delacruz@ched.gov.ph, ana.rodriguez@ched.gov.ph');

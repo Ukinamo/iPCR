@@ -4,6 +4,7 @@ import DropdownLink from '@/Components/DropdownLink.vue';
 import NavLink from '@/Components/NavLink.vue';
 import NotificationBell from '@/Components/NotificationBell.vue';
 import ResponsiveNavLink from '@/Components/ResponsiveNavLink.vue';
+import UserAvatar from '@/Components/UserAvatar.vue';
 import { Link, usePage } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
 
@@ -51,6 +52,11 @@ const accent = computed(() => (page.props.auth?.user?.role === 'administrator' ?
 
                         <div class="hidden sm:ms-6 sm:flex sm:items-center sm:gap-4">
                             <NotificationBell />
+                            <UserAvatar
+                                :name="$page.props.auth.user.name"
+                                :photo-url="$page.props.auth.user.profile_photo_url"
+                                size="sm"
+                            />
                             <div class="text-right text-xs text-slate-500">
                                 <p class="font-medium text-slate-800">{{ $page.props.auth.user.email }}</p>
                                 <p>{{ roleLabel }}</p>
@@ -134,13 +140,22 @@ const accent = computed(() => (page.props.auth?.user?.role === 'administrator' ?
                             <NotificationBell />
                         </div>
                         <div class="px-4">
-                            <div class="text-base font-medium text-slate-800">
-                                {{ $page.props.auth.user.name }}
+                            <div class="flex items-center gap-3">
+                                <UserAvatar
+                                    :name="$page.props.auth.user.name"
+                                    :photo-url="$page.props.auth.user.profile_photo_url"
+                                    size="sm"
+                                />
+                                <div>
+                                    <div class="text-base font-medium text-slate-800">
+                                        {{ $page.props.auth.user.name }}
+                                    </div>
+                                    <div class="text-sm font-medium text-slate-500">
+                                        {{ $page.props.auth.user.email }}
+                                    </div>
+                                    <div class="text-xs text-slate-500">{{ roleLabel }}</div>
+                                </div>
                             </div>
-                            <div class="text-sm font-medium text-slate-500">
-                                {{ $page.props.auth.user.email }}
-                            </div>
-                            <div class="text-xs text-slate-500">{{ roleLabel }}</div>
                         </div>
 
                         <div class="mt-3 space-y-1">
