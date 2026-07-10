@@ -5,6 +5,7 @@ import CommitmentIpcrTable from '@/Components/CommitmentIpcrTable.vue';
 import CommitmentPackageForm from '@/Components/CommitmentPackageForm.vue';
 import EvidencePanel from '@/Components/EvidencePanel.vue';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
+import { statusLabel } from '@/utils/statusLabels';
 import { Head, Link, router, useForm } from '@inertiajs/vue3';
 import { computed, reactive, ref } from 'vue';
 
@@ -238,7 +239,7 @@ function destroyEvidence(id) {
                             </div>
                         </div>
                         <span class="rounded-full px-3 py-1 text-xs font-semibold ring-1" :class="statusBadge(packageStatus)">
-                            {{ packageStatus.replace('_', ' ') }}
+                            {{ statusLabel(packageStatus) }}
                         </span>
                     </div>
                 </div>

@@ -45,6 +45,7 @@ Route::middleware(['auth', 'verified', 'active'])->group(function () {
         Route::get('submissions/{submission}/export/{format?}', [SubmissionExportController::class, 'export'])
             ->where('format', 'xlsx|csv|pdf')
             ->name('submissions.export');
+        Route::get('submissions/{submission}/print-pdf', [IpcrFormPreviewController::class, 'printPdf'])->name('submissions.print-pdf');
         Route::get('submissions/{submission}/print', [IpcrFormPreviewController::class, 'print'])->name('submissions.print');
         Route::post('submissions', [SubmissionController::class, 'store'])->name('submissions.store');
     });
@@ -57,6 +58,7 @@ Route::middleware(['auth', 'verified', 'active'])->group(function () {
         Route::get('submissions/{submission}/export/{format?}', [SubmissionReviewController::class, 'export'])
             ->where('format', 'xlsx|csv|pdf')
             ->name('submissions.export');
+        Route::get('submissions/{submission}/print-pdf', [IpcrFormPreviewController::class, 'printPdf'])->name('submissions.print-pdf');
         Route::get('submissions/{submission}/print', [IpcrFormPreviewController::class, 'print'])->name('submissions.print');
         Route::patch('submissions/{submission}', [SubmissionReviewController::class, 'update'])->name('submissions.update');
         Route::post('submissions/{submission}/review-transfers', [SubmissionReviewTransferController::class, 'store'])->name('submissions.review-transfers.store');
@@ -74,6 +76,7 @@ Route::middleware(['auth', 'verified', 'active'])->group(function () {
         Route::get('submissions/{submission}/export/{format?}', [EmployeeRatingController::class, 'exportSubmission'])
             ->where('format', 'xlsx|csv|pdf')
             ->name('submissions.export');
+        Route::get('submissions/{submission}/print-pdf', [IpcrFormPreviewController::class, 'printPdf'])->name('submissions.print-pdf');
         Route::get('submissions/{submission}/print', [IpcrFormPreviewController::class, 'print'])->name('submissions.print');
         Route::get('users/{user}/ratings/export/{format?}', [EmployeeRatingController::class, 'export'])
             ->where('format', 'xlsx|csv|pdf')

@@ -14,6 +14,7 @@ const props = defineProps({
     officeName: String,
     documentUrl: String,
     printUrl: String,
+    printPdfUrl: String,
     exportUrls: Object,
     updateUrl: String,
     backUrl: String,

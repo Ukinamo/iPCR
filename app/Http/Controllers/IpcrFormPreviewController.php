@@ -9,6 +9,7 @@ use App\Services\IpcrSubmissionExportService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response as HttpResponse;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -34,6 +35,7 @@ class IpcrFormPreviewController extends Controller
             'officeName' => config('ipcr.office_name'),
             'documentUrl' => $this->documentUrl($request, $submission),
             'printUrl' => $this->printUrl($request, $submission),
+            'printPdfUrl' => $this->printPdfUrl($request, $submission),
             'exportUrls' => [
                 'xlsx' => $this->exportUrl($request, $submission, 'xlsx'),
                 'pdf' => $this->exportUrl($request, $submission, 'pdf'),
@@ -77,6 +79,13 @@ class IpcrFormPreviewController extends Controller
         return IpcrSubmissionExportService::inlinePrint($submission);
     }
 
+    public function printPdf(Request $request, IpcrSubmission $submission): StreamedResponse
+    {
+        $submission = $this->authorizeSubmission($request, $submission);
+
+        return IpcrSubmissionExportService::inlinePrintPdf($submission);
+    }
+
     private function authorizeSubmission(Request $request, IpcrSubmission $submission): IpcrSubmission
     {
         $user = $request->user();
@@ -113,6 +122,11 @@ class IpcrFormPreviewController extends Controller
     private function printUrl(Request $request, IpcrSubmission $submission): string
     {
         return route($this->routePrefix($request).'.submissions.print', $submission);
+    }
+
+    private function printPdfUrl(Request $request, IpcrSubmission $submission): string
+    {
+        return route($this->routePrefix($request).'.submissions.print-pdf', $submission);
     }
 
     private function exportUrl(Request $request, IpcrSubmission $submission, string $format): string

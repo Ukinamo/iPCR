@@ -7,6 +7,7 @@ import IpcrPreviewLink from '@/Components/IpcrPreviewLink.vue';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
 import SecondaryButton from '@/Components/SecondaryButton.vue';
 import { formatDecimal, formatWholeNumber } from '@/utils/numberFormat';
+import { statusLabel } from '@/utils/statusLabels';
 import { Head, useForm, router } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
 
@@ -375,7 +376,7 @@ function formatWeighted(c) {
                             </div>
                         </div>
                         <span class="rounded-full px-3 py-1 text-xs font-semibold ring-1" :class="statusBadge(submission.status)">
-                            {{ submission.status.replace('_', ' ') }}
+                            {{ statusLabel(submission.status) }}
                         </span>
                     </div>
                     <div
@@ -661,7 +662,7 @@ function formatWeighted(c) {
                                         </span>
                                     </h4>
                                     <span class="rounded-full px-2 py-0.5 text-xs font-semibold ring-1" :class="statusBadge(g.status)">
-                                        {{ g.status.replace('_', ' ') }}
+                                        {{ statusLabel(g.status) }}
                                     </span>
                                 </div>
                                 <p class="mt-1 text-sm text-slate-500">

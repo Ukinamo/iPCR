@@ -106,10 +106,17 @@ final class IpcrSubmissionExportService
 
     public static function inlinePrint(IpcrSubmission $submission): Response
     {
-        return response(
-            self::renderDocumentHtml($submission, autoPrint: true, showPrintButton: true),
-            200,
-            ['Content-Type' => 'text/html; charset=UTF-8'],
+        return response()->view('ipcr.print-pdf', [
+            'pdfBase64' => base64_encode(self::pdfContents(self::spreadsheet($submission))),
+        ]);
+    }
+
+    public static function inlinePrintPdf(IpcrSubmission $submission): StreamedResponse
+    {
+        return self::streamPdf(
+            self::spreadsheet($submission),
+            self::filename($submission, 'pdf'),
+            download: false,
         );
     }
 
@@ -311,5 +318,14 @@ JS : '';
             'Content-Type' => 'application/pdf',
             'Content-Disposition' => $disposition,
         ]);
+    }
+
+    private static function pdfContents(Spreadsheet $spreadsheet): string
+    {
+        $writer = new MpdfWriter($spreadsheet);
+        ob_start();
+        $writer->save('php://output');
+
+        return (string) ob_get_clean();
     }
 }
