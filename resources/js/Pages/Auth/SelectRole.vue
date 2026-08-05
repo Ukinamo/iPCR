@@ -24,7 +24,7 @@ const roles = [
     <Head title="Select your role — I-PERFORM" />
 
     <div class="flex min-h-screen flex-col items-center justify-center bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 px-4 py-12 text-white">
-        <div class="w-full max-w-lg rounded-2xl border border-white/10 bg-slate-900/60 p-8 shadow-2xl backdrop-blur">
+        <div class="w-full max-w-lg rounded-2xl border border-white/10 bg-slate-900/60 p-5 shadow-2xl backdrop-blur sm:p-8">
             <div class="text-center">
                 <p class="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">I-PERFORM</p>
                 <h1 class="mt-2 text-2xl font-bold">Sign in to your account</h1>
@@ -36,17 +36,17 @@ const roles = [
                     v-for="role in roles"
                     :key="role.key"
                     :href="route('login', { as: role.key })"
-                    class="flex items-center justify-between rounded-xl border border-white/10 bg-slate-900/80 px-4 py-4 text-left transition hover:border-blue-400/60 hover:bg-slate-800/80"
+                    class="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-slate-900/80 px-4 py-4 text-left transition hover:border-blue-400/60 hover:bg-slate-800/80"
                 >
-                    <div>
+                    <div class="min-w-0">
                         <p class="font-semibold">{{ role.title }}</p>
                         <p class="text-sm text-slate-400">{{ role.description }}</p>
                     </div>
-                    <span class="text-slate-300">→</span>
+                    <span class="shrink-0 text-slate-300">→</span>
                 </Link>
             </div>
 
-            <div class="mt-6 rounded-lg border border-white/5 bg-slate-950/60 p-3 text-xs text-slate-400" align="center">
+            <div class="mt-6 rounded-lg border border-white/5 bg-slate-950/60 p-3 text-center text-xs text-slate-400">
                 Registration creates an employee account.
             </div>
         </div>

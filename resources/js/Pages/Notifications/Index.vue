@@ -46,7 +46,7 @@ function openNotification(id) {
         </template>
 
         <div class="py-8">
-            <div class="mx-auto max-w-3xl sm:px-6 lg:px-8">
+            <div class="mx-auto max-w-3xl px-4 sm:px-6 lg:px-8">
                 <div v-if="!notifications.data?.length" class="rounded-xl border border-dashed border-slate-200 bg-white p-10 text-center text-sm text-slate-500 shadow-sm">
                     No notifications yet.
                 </div>

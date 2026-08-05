@@ -146,7 +146,7 @@ function applyMonthFilter() {
                 <select
                     id="report-month-filter"
                     v-model="localMonth"
-                    class="rounded-md border-slate-300 text-sm shadow-sm focus:border-amber-500 focus:ring-amber-500"
+                    class="w-full rounded-md border-slate-300 text-sm shadow-sm focus:border-amber-500 focus:ring-amber-500 sm:w-auto"
                     @change="applyMonthFilter"
                 >
                     <option value="">All months</option>
@@ -176,12 +176,12 @@ function applyMonthFilter() {
 
         <div v-else class="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
             <div class="overflow-x-auto">
-                <table class="min-w-full divide-y divide-slate-200 text-sm">
+                <table class="min-w-[720px] w-full divide-y divide-slate-200 text-sm">
                     <thead class="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                         <tr>
                             <th class="px-4 py-3">Period</th>
                             <th class="px-4 py-3">Employee</th>
-                            <th class="px-4 py-3">Supervisor</th>
+                            <th class="hidden px-4 py-3 md:table-cell">Supervisor</th>
                             <th class="px-4 py-3">Reviewed</th>
                             <th class="px-4 py-3 text-center">Overall</th>
                             <th class="px-4 py-3 text-right">Actions</th>
@@ -194,16 +194,16 @@ function applyMonthFilter() {
                                 <p class="font-medium text-slate-900">{{ s.employee?.name ?? '—' }}</p>
                                 <p class="text-xs text-slate-500">{{ s.employee?.email ?? '' }}</p>
                             </td>
-                            <td class="px-4 py-3 text-slate-700">{{ s.supervisor?.name ?? '—' }}</td>
+                            <td class="hidden px-4 py-3 text-slate-700 md:table-cell">{{ s.supervisor?.name ?? '—' }}</td>
                             <td class="px-4 py-3 text-slate-600">{{ formatReviewed(s.reviewed_at) }}</td>
                             <td class="px-4 py-3 text-center font-semibold text-amber-800">
                                 {{ s.overall_rating != null ? formatDecimal(s.overall_rating, 2) : '—' }}
                             </td>
                             <td class="px-4 py-3">
-                                <div class="flex flex-wrap items-center justify-end gap-2">
+                                <div class="flex flex-col items-stretch justify-end gap-2 sm:flex-row sm:items-center">
                                     <Link
                                         :href="route(viewRouteName, s.id)"
-                                        class="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-800 shadow-sm hover:bg-slate-50"
+                                        class="inline-flex items-center justify-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-800 shadow-sm hover:bg-slate-50"
                                     >
                                         <AppIcon name="eye" class="h-3.5 w-3.5" />
                                         View

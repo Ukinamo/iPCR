@@ -199,7 +199,7 @@ onUnmounted(() => {
                     <Link
                         v-if="canRegister"
                         :href="route('register')"
-                        class="hidden rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white shadow-md shadow-blue-600/20 hover:bg-blue-500 sm:inline-flex"
+                        class="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white shadow-md shadow-blue-600/20 hover:bg-blue-500"
                     >
                         Register
                     </Link>
@@ -237,7 +237,7 @@ onUnmounted(() => {
                             <article
                                 v-for="slide in slides"
                                 :key="slide.id"
-                                class="w-full shrink-0 px-1"
+                                class="w-full shrink-0 px-10 sm:px-1"
                                 aria-hidden="false"
                             >
                                 <div class="grid gap-6 lg:grid-cols-2 lg:items-center lg:gap-10">
@@ -245,7 +245,7 @@ onUnmounted(() => {
                                         <p class="text-xs font-semibold uppercase tracking-widest text-blue-600 sm:text-sm">
                                             {{ slide.eyebrow }}
                                         </p>
-                                        <h1 class="mt-2 text-2xl font-extrabold leading-tight tracking-tight text-slate-900 sm:mt-3 sm:text-3xl lg:text-4xl xl:text-[2.75rem]">
+                                        <h1 class="mt-2 text-xl font-extrabold leading-tight tracking-tight text-slate-900 sm:mt-3 sm:text-3xl lg:text-4xl xl:text-[2.75rem]">
                                             {{ slide.title }}
                                             <span
                                                 class="mt-0.5 block bg-gradient-to-r bg-clip-text text-transparent sm:mt-1"
@@ -371,8 +371,8 @@ onUnmounted(() => {
             </div>
         </main>
 
-        <footer class="shrink-0 border-t border-slate-200 bg-slate-50 px-4 py-2 text-center text-[11px] text-slate-500 sm:text-xs">
-            <p class="truncate">I-PERFORM · CHED – MIMAROPA Regional Office · Individual Performance Commitment and Review</p>
+        <footer class="shrink-0 border-t border-slate-200 bg-slate-50 px-4 py-2 text-center text-[11px] leading-snug text-slate-500 sm:text-xs">
+            <p class="whitespace-normal">I-PERFORM · CHED – MIMAROPA Regional Office · Individual Performance Commitment and Review</p>
         </footer>
     </div>
 </template>

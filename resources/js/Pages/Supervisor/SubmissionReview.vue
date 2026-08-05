@@ -369,8 +369,8 @@ function badge(status) {
                         </p>
                     </div>
                 </div>
-                <div class="flex gap-2">
-                    <Link :href="route('dashboard')" class="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50">
+                <div class="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+                    <Link :href="route('dashboard')" class="inline-flex w-full items-center justify-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 sm:w-auto">
                         <AppIcon name="arrow-left" class="h-4 w-4" />
                         Back to dashboard
                     </Link>
@@ -380,7 +380,7 @@ function badge(status) {
         </template>
 
         <div class="py-6">
-            <div class="mx-auto w-full max-w-[100vw] space-y-5 px-3 sm:px-4 lg:px-6">
+            <div class="mx-auto w-full max-w-7xl space-y-5 px-3 sm:px-4 lg:px-6">
                 <ReviewTransferPanel
                     :submission="submission"
                     :supervisors="supervisors"
@@ -411,7 +411,10 @@ function badge(status) {
                     </div>
 
                     <div class="mt-2 overflow-x-auto rounded-lg border border-slate-300">
-                        <table class="min-w-full border-collapse text-[11px]">
+                        <p class="border-b border-slate-200 bg-slate-50 px-3 py-1.5 text-[10px] text-slate-500 sm:hidden">
+                            Swipe sideways to rate all columns
+                        </p>
+                        <table class="min-w-[1100px] w-full border-collapse text-[11px]">
                             <thead class="bg-slate-100 text-center font-semibold uppercase tracking-wide text-slate-700">
                                 <tr>
                                     <th class="border border-slate-300 px-2 py-1" rowspan="3">Function</th>
@@ -623,7 +626,7 @@ function badge(status) {
                             <p class="text-sm font-semibold text-slate-800">Decision</p>
                             <p class="mt-1 text-xs text-slate-500">Approve after completing each row, or return with actionable comments (min. 20 characters).</p>
 
-                            <div class="mt-3 flex gap-2">
+                            <div class="mt-3 flex flex-col gap-2 sm:flex-row">
                                 <button
                                     type="button"
                                     class="inline-flex flex-1 items-center justify-center gap-2 rounded-xl border px-3 py-2.5 text-sm font-semibold transition"
@@ -640,7 +643,8 @@ function badge(status) {
                                     @click="reviewForm.action = 'return'"
                                 >
                                     <AppIcon name="exclamation-triangle" class="h-4 w-4" />
-                                    Return for revision
+                                    <span class="sm:hidden">Return</span>
+                                    <span class="hidden sm:inline">Return for revision</span>
                                 </button>
                             </div>
 
@@ -657,16 +661,16 @@ function badge(status) {
                                 <InputError class="mt-1" :message="reviewForm.errors.supervisor_feedback" />
                             </div>
 
-                            <div class="mt-6 flex justify-end gap-2">
-                                <Link :href="route('dashboard')">
-                                    <SecondaryButton type="button">
+                            <div class="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                                <Link :href="route('dashboard')" class="w-full sm:w-auto">
+                                    <SecondaryButton type="button" class="w-full justify-center sm:w-auto">
                                         <span class="inline-flex items-center gap-1.5">
                                             <AppIcon name="x-mark" class="h-4 w-4" />
                                             Cancel
                                         </span>
                                     </SecondaryButton>
                                 </Link>
-                                <PrimaryButton :disabled="reviewForm.processing" @click="submitReview">
+                                <PrimaryButton class="w-full justify-center sm:w-auto" :disabled="reviewForm.processing" @click="submitReview">
                                     <span class="inline-flex items-center gap-1.5">
                                         <AppIcon name="check-badge" class="h-4 w-4" />
                                         Submit decision

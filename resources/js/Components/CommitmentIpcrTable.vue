@@ -91,7 +91,10 @@ const hasRows = computed(() => sortedCommitments.value.length > 0);
 
 <template>
     <div v-if="hasRows" class="overflow-x-auto rounded-lg border border-slate-300 bg-white">
-        <table class="min-w-full border-collapse text-[11px]">
+        <p class="border-b border-slate-200 bg-slate-50 px-3 py-1.5 text-[10px] text-slate-500 sm:hidden">
+            Swipe sideways to see all columns
+        </p>
+        <table class="min-w-[720px] w-full border-collapse text-[11px]">
             <thead class="bg-slate-100 text-center font-semibold uppercase tracking-wide text-slate-700">
                 <tr>
                     <th class="border border-slate-300 px-2 py-1.5" rowspan="2">Function</th>

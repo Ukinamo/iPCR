@@ -216,7 +216,7 @@ function destroyEvidence(id) {
         </template>
 
         <div class="py-8">
-            <div class="mx-auto max-w-6xl space-y-6 sm:px-6 lg:px-8">
+            <div class="mx-auto max-w-6xl space-y-6 px-4 sm:px-6 lg:px-8">
                 <div class="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
                     <div class="flex flex-wrap items-start justify-between gap-3">
                         <div class="flex min-w-0 flex-1 items-start gap-3">

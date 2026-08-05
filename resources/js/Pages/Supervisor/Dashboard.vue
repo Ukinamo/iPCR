@@ -157,7 +157,7 @@ function cancelTransfer(id) {
         </template>
 
         <div class="py-8">
-            <div class="mx-auto max-w-6xl space-y-6 sm:px-6 lg:px-8">
+            <div class="mx-auto max-w-6xl space-y-6 px-4 sm:px-6 lg:px-8">
                 <div class="grid gap-4 md:grid-cols-4">
                     <div
                         v-for="card in statCards"
@@ -179,12 +179,12 @@ function cancelTransfer(id) {
                     </div>
                 </div>
 
-                <div class="flex flex-wrap gap-2 rounded-lg bg-sky-50/60 p-1 text-sm font-semibold text-slate-700">
+                <div class="flex gap-2 overflow-x-auto rounded-lg bg-sky-50/60 p-1 text-sm font-semibold text-slate-700 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                     <button
                         v-for="item in tabs"
                         :key="item.id"
                         type="button"
-                        class="inline-flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2 min-w-[9rem]"
+                        class="inline-flex min-w-0 flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-md px-3 py-2"
                         :class="tab === item.id ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'"
                         @click="tab = item.id"
                     >

@@ -44,7 +44,7 @@ function submit() {
         </template>
 
         <div class="py-8">
-            <div class="mx-auto max-w-3xl sm:px-6 lg:px-8">
+            <div class="mx-auto max-w-3xl px-4 sm:px-6 lg:px-8">
                 <div class="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
                     <form class="grid gap-4 md:grid-cols-2" @submit.prevent="submit">
                         <div>

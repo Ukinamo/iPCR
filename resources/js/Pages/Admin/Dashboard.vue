@@ -98,7 +98,7 @@ function destroyUser(id) {
         </template>
 
         <div class="py-8">
-            <div class="mx-auto max-w-7xl space-y-6 sm:px-6 lg:px-8">
+            <div class="mx-auto max-w-7xl space-y-6 px-4 sm:px-6 lg:px-8">
                 <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
                     <div
                         v-for="card in statCards"
@@ -145,17 +145,18 @@ function destroyUser(id) {
                     </p>
                 </div>
 
-                <div class="flex flex-wrap gap-2 rounded-lg bg-amber-50/60 p-1 text-sm font-semibold text-slate-700">
+                <div class="flex gap-2 overflow-x-auto rounded-lg bg-amber-50/60 p-1 text-sm font-semibold text-slate-700 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                     <button
                         v-for="item in tabs"
                         :key="item.id"
                         type="button"
-                        class="inline-flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2 min-w-[9rem]"
+                        class="inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-md px-3 py-2"
                         :class="tab === item.id ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'"
                         @click="tab = item.id"
                     >
                         <AppIcon :name="item.icon" class="h-4 w-4 shrink-0" />
-                        {{ item.label }}
+                        <span class="sm:hidden">{{ item.id === 'users' ? 'Users' : item.id === 'reports' ? 'Reports' : item.id === 'analytics' ? 'Analytics' : 'Transfers' }}</span>
+                        <span class="hidden sm:inline">{{ item.label }}</span>
                         <span
                             v-if="item.id === 'transfers' && pendingTransferCount > 0"
                             class="rounded-full bg-amber-600 px-2 py-0.5 text-xs font-bold text-white"
@@ -175,7 +176,7 @@ function destroyUser(id) {
                         </div>
                         <Link
                             :href="route('admin.users.index')"
-                            class="inline-flex items-center gap-2 rounded-md bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700"
+                            class="inline-flex w-full items-center justify-center gap-2 rounded-md bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700 sm:w-auto"
                         >
                             <AppIcon name="arrow-top-right" class="h-4 w-4" />
                             Open user management
@@ -184,8 +185,8 @@ function destroyUser(id) {
 
                     <p class="text-sm text-slate-500">Create and edit are now on dedicated pages for safer user administration.</p>
 
-                    <div class="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-                        <table class="min-w-full divide-y divide-slate-200 text-sm">
+                    <div class="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+                        <table class="min-w-[640px] w-full divide-y divide-slate-200 text-sm">
                             <thead class="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                                 <tr>
                                     <th class="px-4 py-3">Name</th>

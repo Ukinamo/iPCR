@@ -91,45 +91,46 @@ const periodLabel = `Q${props.submission.evaluation_quarter} ${props.submission.
                     <p v-if="form.errors.commitment_statement" class="mt-2 text-sm text-red-600">
                         {{ form.errors.commitment_statement }}
                     </p>
-                    <div class="mt-4 flex flex-wrap items-center gap-3">
+                    <div class="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
                         <PrimaryButton
                             type="button"
+                            class="w-full justify-center sm:w-auto"
                             :disabled="form.processing"
                             @click="saveCommitment"
                         >
                             Save commitment
                         </PrimaryButton>
-                        <SecondaryButton type="button" @click="openPrint">
+                        <SecondaryButton type="button" class="w-full justify-center sm:w-auto" @click="openPrint">
                             <AppIcon name="export" class="mr-1.5 h-4 w-4" />
                             Print
                         </SecondaryButton>
                         <a
                             :href="exportUrls.xlsx"
-                            class="inline-flex items-center rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+                            class="inline-flex w-full items-center justify-center rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 sm:w-auto"
                         >
                             Excel
                         </a>
                         <a
                             :href="exportUrls.pdf"
-                            class="inline-flex items-center rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+                            class="inline-flex w-full items-center justify-center rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 sm:w-auto"
                         >
                             PDF
                         </a>
                         <a
                             :href="exportUrls.csv"
-                            class="inline-flex items-center rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+                            class="inline-flex w-full items-center justify-center rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 sm:w-auto"
                         >
                             CSV
                         </a>
                     </div>
                 </div>
 
-                <div class="overflow-hidden rounded-xl border border-slate-200 bg-slate-100 shadow-sm">
+                <div class="overflow-x-auto rounded-xl border border-slate-200 bg-slate-100 shadow-sm">
                     <iframe
                         :key="iframeKey"
                         :src="documentUrl"
                         title="IPCR form preview"
-                        class="h-[1100px] w-full bg-white"
+                        class="h-[70vh] min-h-[420px] w-full min-w-[720px] bg-white sm:h-[1100px]"
                     />
                 </div>
             </div>

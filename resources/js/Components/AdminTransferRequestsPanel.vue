@@ -94,7 +94,7 @@ function formatWhen(iso) {
                     <span class="rounded-full bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-900 ring-1 ring-amber-100">pending</span>
                 </div>
 
-                <div class="mt-4 grid gap-4 md:grid-cols-[1fr_auto_auto]">
+                <div class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-[1fr_auto_auto]">
                     <div>
                         <label :for="`notes-${req.id}`" class="text-sm font-medium text-slate-700">Admin notes (optional)</label>
                         <textarea
@@ -105,24 +105,26 @@ function formatWhen(iso) {
                             placeholder="Optional note for the record"
                         />
                     </div>
-                    <div class="flex items-end">
-                        <PrimaryButton
-                            class="!bg-emerald-600 hover:!bg-emerald-700"
-                            :disabled="processing[req.id]"
-                            @click="approve(req.id)"
-                        >
-                            Approve
-                        </PrimaryButton>
-                    </div>
-                    <div class="flex items-end">
-                        <SecondaryButton
-                            type="button"
-                            class="text-rose-700 ring-rose-200"
-                            :disabled="processing[req.id]"
-                            @click="reject(req.id)"
-                        >
-                            Reject
-                        </SecondaryButton>
+                    <div class="grid grid-cols-2 gap-2 sm:contents">
+                        <div class="flex items-end">
+                            <PrimaryButton
+                                class="w-full !bg-emerald-600 hover:!bg-emerald-700 sm:w-auto"
+                                :disabled="processing[req.id]"
+                                @click="approve(req.id)"
+                            >
+                                Approve
+                            </PrimaryButton>
+                        </div>
+                        <div class="flex items-end">
+                            <SecondaryButton
+                                type="button"
+                                class="w-full justify-center text-rose-700 ring-rose-200 sm:w-auto"
+                                :disabled="processing[req.id]"
+                                @click="reject(req.id)"
+                            >
+                                Reject
+                            </SecondaryButton>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -130,8 +132,8 @@ function formatWhen(iso) {
 
         <section v-if="recentRequests?.length" class="space-y-4">
             <h4 class="text-sm font-semibold uppercase tracking-wide text-slate-500">Recent decisions</h4>
-            <div class="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-                <table class="min-w-full divide-y divide-slate-200 text-sm">
+            <div class="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+                <table class="min-w-[520px] w-full divide-y divide-slate-200 text-sm">
                     <thead class="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                         <tr>
                             <th class="px-4 py-3">Employee</th>
