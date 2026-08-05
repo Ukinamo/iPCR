@@ -11,7 +11,7 @@ import SecondaryButton from '@/Components/SecondaryButton.vue';
 import TextInput from '@/Components/TextInput.vue';
 import { formatWholeNumber, roundWholeNumberForSubmit } from '@/utils/numberFormat';
 import { Head, Link, useForm } from '@inertiajs/vue3';
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 
 const props = defineProps({
     submission: Object,
@@ -27,6 +27,39 @@ const props = defineProps({
 
 const isApproved = computed(() => props.submission?.status === 'approved');
 const isEditable = computed(() => props.submission?.status === 'in_review');
+const isPackageEditing = ref(false);
+const packageSnapshot = ref(null);
+
+function uid() {
+    return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+function mapCommitmentToRow(c) {
+    const suggested = suggestedRating(
+        c.rating_q3_target ?? '',
+        c.rating_q3_actual ?? '',
+        c.rating_q4_target ?? '',
+        c.rating_q4_actual ?? '',
+    );
+
+    return {
+        _uid: uid(),
+        id: c.id,
+        function_type: c.function_type === 'strategic' ? 'strategic' : 'core',
+        title: c.title ?? '',
+        description: c.description ?? '',
+        weight: c.weight ?? null,
+        annual_office_target: c.annual_office_target ?? '',
+        individual_annual_targets: c.individual_annual_targets ?? '',
+        rating_quality: c.weight != null ? (c.rating_quality ?? suggested ?? 3) : null,
+        rating_efficiency: c.weight != null ? (c.rating_efficiency ?? suggested ?? 3) : null,
+        rating_timeliness: c.weight != null ? (c.rating_timeliness ?? suggested ?? 3) : null,
+        rating_q3_target: c.rating_q3_target ?? '',
+        rating_q3_actual: c.rating_q3_actual ?? '',
+        rating_q4_target: c.rating_q4_target ?? '',
+        rating_q4_actual: c.rating_q4_actual ?? '',
+    };
+}
 
 const sortedCommitments = computed(() =>
     [...(props.submission?.commitments || [])].sort((a, b) => a.id - b.id),
@@ -98,38 +131,38 @@ function formatAccomplishmentPercent(percent) {
     return percent != null ? `${(percent * 100).toFixed(0)}%` : '—';
 }
 
-
 const reviewForm = useForm({
     action: 'approve',
     supervisor_feedback: props.submission?.supervisor_feedback ?? '',
-    commitments: sortedCommitments.value.map((c) => {
-        const suggested = suggestedRating(
-            c.rating_q3_target ?? '',
-            c.rating_q3_actual ?? '',
-            c.rating_q4_target ?? '',
-            c.rating_q4_actual ?? '',
-        );
-        return {
-            id: c.id,
-            rating_quality: c.weight != null ? (c.rating_quality ?? suggested ?? 3) : null,
-            rating_efficiency: c.weight != null ? (c.rating_efficiency ?? suggested ?? 3) : null,
-            rating_timeliness: c.weight != null ? (c.rating_timeliness ?? suggested ?? 3) : null,
-            rating_q3_target: c.rating_q3_target ?? '',
-            rating_q3_actual: c.rating_q3_actual ?? '',
-            rating_q4_target: c.rating_q4_target ?? '',
-            rating_q4_actual: c.rating_q4_actual ?? '',
-        };
-    }),
+    commitments: sortedCommitments.value.map(mapCommitmentToRow),
 });
 
-function rowPreview(commitment, row) {
+const editableGroups = computed(() => {
+    const groups = { core: [], strategic: [] };
+    const maps = { core: new Map(), strategic: new Map() };
+
+    reviewForm.commitments.forEach((row, index) => {
+        const type = row.function_type === 'strategic' ? 'strategic' : 'core';
+        const key = (row.title || '').trim() || `__blank_${type}_${index}`;
+        if (!maps[type].has(key)) {
+            const group = { key, title: row.title || '', indexes: [] };
+            maps[type].set(key, group);
+            groups[type].push(group);
+        }
+        maps[type].get(key).indexes.push(index);
+    });
+
+    return groups;
+});
+
+function rowPreview(row) {
     const ratio = accomplishmentRatio(
         row.rating_q3_target,
         row.rating_q3_actual,
         row.rating_q4_target,
         row.rating_q4_actual,
     );
-    if (commitment.weight == null) {
+    if (row.weight == null || row.weight === '') {
         return { ...ratio, q: null, e: null, t: null, avg: null, weighted: null };
     }
     const q = Number(row.rating_quality);
@@ -139,7 +172,7 @@ function rowPreview(commitment, row) {
         return { ...ratio, q: null, e: null, t: null, avg: null, weighted: null };
     }
     const avg = (q + e + t) / 3;
-    const w = Number(commitment.weight) / 100;
+    const w = Number(row.weight) / 100;
     return { ...ratio, q, e, t, avg, weighted: avg * w };
 }
 
@@ -158,18 +191,28 @@ function applySuggestedRatings(row) {
     row.rating_timeliness = suggested;
 }
 
+function onWeightChange(row) {
+    if (row.weight === '' || row.weight == null) {
+        row.rating_quality = null;
+        row.rating_efficiency = null;
+        row.rating_timeliness = null;
+        return;
+    }
+    if (row.rating_quality == null) {
+        applySuggestedRatings(row);
+        if (row.rating_quality == null) {
+            row.rating_quality = 3;
+            row.rating_efficiency = 3;
+            row.rating_timeliness = 3;
+        }
+    }
+}
+
 function sumWeightedPreview() {
     let sum = 0;
     let hasAny = false;
-    for (const c of sortedCommitments.value) {
-        if (c.weight == null) {
-            continue;
-        }
-        const row = reviewForm.commitments.find((r) => r.id === c.id);
-        if (!row) {
-            continue;
-        }
-        const p = rowPreview(c, row);
+    for (const row of reviewForm.commitments) {
+        const p = rowPreview(row);
         if (p.weighted == null) {
             continue;
         }
@@ -182,15 +225,8 @@ function sumWeightedPreview() {
 function sumAveragePreview() {
     let sum = 0;
     let hasAny = false;
-    for (const c of sortedCommitments.value) {
-        if (c.weight == null) {
-            continue;
-        }
-        const row = reviewForm.commitments.find((r) => r.id === c.id);
-        if (!row) {
-            continue;
-        }
-        const p = rowPreview(c, row);
+    for (const row of reviewForm.commitments) {
+        const p = rowPreview(row);
         if (p.avg == null) {
             continue;
         }
@@ -198,6 +234,87 @@ function sumAveragePreview() {
         hasAny = true;
     }
     return hasAny ? sum : null;
+}
+
+function sectionWeightTotalEditable(type) {
+    return reviewForm.commitments
+        .filter((c) => c.function_type === type)
+        .reduce((sum, c) => sum + Number(c.weight || 0), 0);
+}
+
+function groupWeightTotal(group) {
+    return group.indexes.reduce(
+        (sum, index) => sum + Number(reviewForm.commitments[index]?.weight || 0),
+        0,
+    );
+}
+
+function addItemRow(group) {
+    const first = reviewForm.commitments[group.indexes[0]];
+    if (!first) {
+        return;
+    }
+    const insertAt = group.indexes[group.indexes.length - 1] + 1;
+    reviewForm.commitments.splice(insertAt, 0, {
+        _uid: uid(),
+        id: null,
+        function_type: first.function_type,
+        title: first.title,
+        description: '',
+        weight: null,
+        annual_office_target: '',
+        individual_annual_targets: '',
+        rating_quality: null,
+        rating_efficiency: null,
+        rating_timeliness: null,
+        rating_q3_target: '',
+        rating_q3_actual: '',
+        rating_q4_target: '',
+        rating_q4_actual: '',
+    });
+}
+
+function removeItemRow(index) {
+    if (reviewForm.commitments.length <= 1) {
+        return;
+    }
+    reviewForm.commitments.splice(index, 1);
+}
+
+function addFunctionEntry(type) {
+    reviewForm.commitments.push({
+        _uid: uid(),
+        id: null,
+        function_type: type,
+        title: '',
+        description: '',
+        weight: null,
+        annual_office_target: '',
+        individual_annual_targets: '',
+        rating_quality: null,
+        rating_efficiency: null,
+        rating_timeliness: null,
+        rating_q3_target: '',
+        rating_q3_actual: '',
+        rating_q4_target: '',
+        rating_q4_actual: '',
+    });
+}
+
+function syncGroupTitle(group, value) {
+    group.title = value;
+    group.indexes.forEach((index) => {
+        reviewForm.commitments[index].title = value;
+    });
+}
+
+function removeFunctionGroup(group) {
+    if (reviewForm.commitments.length <= group.indexes.length) {
+        return;
+    }
+    [...group.indexes].sort((a, b) => b - a).forEach((index) => {
+        reviewForm.commitments.splice(index, 1);
+    });
 }
 
 function ratedAverageTotal(commitments) {
@@ -212,7 +329,7 @@ function rowWeightedDisplay(commitment, row) {
     if (isApproved.value && commitment.rating_weighted != null) {
         return Number(commitment.rating_weighted).toFixed(2);
     }
-    const p = rowPreview(commitment, row);
+    const p = rowPreview(row);
     return p.weighted != null ? p.weighted.toFixed(2) : '—';
 }
 
@@ -277,48 +394,124 @@ function sectionWeightTotal(functionType) {
         .reduce((sum, c) => sum + Number(c.weight || 0), 0);
 }
 
-function ratingRow(id) {
+function ratingRowReadonly(id) {
     return reviewForm.commitments.find((r) => r.id === id);
 }
 
-function submitReview() {
-    reviewForm.transform((data) => {
+function cloneCommitments(rows) {
+    return rows.map((row) => ({ ...row }));
+}
+
+function startPackageEdit() {
+    packageSnapshot.value = cloneCommitments(reviewForm.commitments);
+    isPackageEditing.value = true;
+}
+
+function cancelPackageEdit() {
+    if (packageSnapshot.value) {
+        reviewForm.commitments = cloneCommitments(packageSnapshot.value);
+    }
+    reviewForm.clearErrors();
+    isPackageEditing.value = false;
+    packageSnapshot.value = null;
+}
+
+function mergeCommitmentsFromProps(previousRows) {
+    const prevById = new Map(
+        previousRows.filter((row) => row.id != null).map((row) => [row.id, row]),
+    );
+
+    return sortedCommitments.value.map((commitment) => {
+        const row = mapCommitmentToRow(commitment);
+        const previous = prevById.get(commitment.id);
+        if (!previous) {
+            return row;
+        }
+
+        return {
+            ...row,
+            rating_quality: previous.rating_quality,
+            rating_efficiency: previous.rating_efficiency,
+            rating_timeliness: previous.rating_timeliness,
+            rating_q3_target: previous.rating_q3_target,
+            rating_q3_actual: previous.rating_q3_actual,
+            rating_q4_target: previous.rating_q4_target,
+            rating_q4_actual: previous.rating_q4_actual,
+        };
+    });
+}
+
+function buildCommitmentsPayload(data) {
+    return data.commitments.map((r) => {
+        const base = {
+            id: r.id || null,
+            function_type: r.function_type,
+            title: r.title,
+            description: r.description || null,
+            weight: r.weight === '' || r.weight == null ? null : Number(r.weight),
+            annual_office_target: r.annual_office_target || null,
+            individual_annual_targets: r.individual_annual_targets || null,
+            rating_q3_target: roundWholeNumberForSubmit(r.rating_q3_target),
+            rating_q3_actual: roundWholeNumberForSubmit(r.rating_q3_actual),
+            rating_q4_target: roundWholeNumberForSubmit(r.rating_q4_target),
+            rating_q4_actual: roundWholeNumberForSubmit(r.rating_q4_actual),
+        };
+
         if (data.action !== 'approve') {
+            return base;
+        }
+
+        if (base.weight == null) {
             return {
-                action: data.action,
-                supervisor_feedback: data.supervisor_feedback,
+                ...base,
+                rating_quality: null,
+                rating_efficiency: null,
+                rating_timeliness: null,
             };
         }
+
         return {
-            action: data.action,
-            supervisor_feedback: data.supervisor_feedback,
-            commitments: data.commitments.map((r) => {
-                const commitment = sortedCommitments.value.find((c) => c.id === r.id);
-                const base = {
-                    id: r.id,
-                    rating_q3_target: roundWholeNumberForSubmit(r.rating_q3_target),
-                    rating_q3_actual: roundWholeNumberForSubmit(r.rating_q3_actual),
-                    rating_q4_target: roundWholeNumberForSubmit(r.rating_q4_target),
-                    rating_q4_actual: roundWholeNumberForSubmit(r.rating_q4_actual),
-                };
-                if (commitment?.weight == null) {
-                    return {
-                        ...base,
-                        rating_quality: null,
-                        rating_efficiency: null,
-                        rating_timeliness: null,
-                    };
-                }
-                return {
-                    ...base,
-                    rating_quality: Number(r.rating_quality),
-                    rating_efficiency: Number(r.rating_efficiency),
-                    rating_timeliness: Number(r.rating_timeliness),
-                };
-            }),
+            ...base,
+            rating_quality: Number(r.rating_quality),
+            rating_efficiency: Number(r.rating_efficiency),
+            rating_timeliness: Number(r.rating_timeliness),
         };
-    }).patch(route('supervisor.submissions.update', props.submission.id), {
+    });
+}
+
+function savePackageEdit() {
+    const previousAction = reviewForm.action;
+    reviewForm.action = 'save';
+
+    reviewForm.transform((data) => ({
+        action: 'save',
+        supervisor_feedback: data.supervisor_feedback,
+        commitments: buildCommitmentsPayload({ ...data, action: 'save' }),
+    })).patch(route('supervisor.submissions.update', props.submission.id), {
         preserveScroll: true,
+        onSuccess: () => {
+            const previous = cloneCommitments(reviewForm.commitments);
+            reviewForm.commitments = mergeCommitmentsFromProps(previous);
+            isPackageEditing.value = false;
+            packageSnapshot.value = null;
+        },
+        onFinish: () => {
+            reviewForm.action = previousAction;
+            reviewForm.transform((data) => data);
+        },
+    });
+}
+
+function submitReview() {
+    reviewForm.transform((data) => ({
+        action: data.action,
+        supervisor_feedback: data.supervisor_feedback,
+        commitments: buildCommitmentsPayload(data),
+    })).patch(route('supervisor.submissions.update', props.submission.id), {
+        preserveScroll: true,
+        onFinish: () => {
+            reviewForm.transform((data) => data);
+        },
     });
 }
 
@@ -388,25 +581,62 @@ function badge(status) {
                 />
 
                 <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-                    <div class="flex items-start gap-3">
-                        <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
-                            <AppIcon name="star" class="h-4 w-4" />
-                        </span>
-                        <div>
-                            <p class="text-sm font-semibold text-slate-800">IPCR Form 1 — Evaluation</p>
-                            <p class="mt-1 text-xs text-slate-500">
-                        <template v-if="isEditable">
-                            Fill in Q3 and Q4 <strong>Target</strong> / <strong>Actual</strong> per indicator (optional).
-                            Q, E, and T default from the accomplishment ratio when targets and actuals are provided.
-                            Average = (Q + E + T) ÷ 3. Remarks = Weight% × Average; TOTAL Remarks = sum of row Remarks (final rating).
-                        </template>
-                        <template v-else-if="isApproved">
-                            This submission has been approved. Ratings shown below are read-only.
-                        </template>
-                        <template v-else>
-                            This submission is {{ submission.status.replace('_', ' ') }}. No ratings can be edited.
-                        </template>
-                            </p>
+                    <div class="flex flex-wrap items-start justify-between gap-3">
+                        <div class="flex items-start gap-3">
+                            <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
+                                <AppIcon name="star" class="h-4 w-4" />
+                            </span>
+                            <div>
+                                <p class="text-sm font-semibold text-slate-800">IPCR Form 1 — Evaluation</p>
+                                <p class="mt-1 text-xs text-slate-500">
+                                    <template v-if="isEditable && isPackageEditing">
+                                        Editing Function, Services/Indicators, Weight, and Annual Targets.
+                                        Use <strong>+ Add row</strong> / <strong>+ Add function</strong>, then <strong>Save</strong> or <strong>Cancel</strong>.
+                                    </template>
+                                    <template v-else-if="isEditable">
+                                        Rate accomplishments below. Click <strong>Edit</strong> to change Function, Services/Indicators, Weight, or Annual Targets.
+                                        Q, E, and T default from the accomplishment ratio. Average = (Q + E + T) ÷ 3.
+                                    </template>
+                                    <template v-else-if="isApproved">
+                                        This submission has been approved. Ratings shown below are read-only.
+                                    </template>
+                                    <template v-else>
+                                        This submission is {{ submission.status.replace('_', ' ') }}. No ratings can be edited.
+                                    </template>
+                                </p>
+                            </div>
+                        </div>
+
+                        <div v-if="isEditable" class="flex flex-wrap items-center gap-2">
+                            <template v-if="isPackageEditing">
+                                <SecondaryButton
+                                    type="button"
+                                    class="justify-center"
+                                    :disabled="reviewForm.processing"
+                                    @click="cancelPackageEdit"
+                                >
+                                    Cancel
+                                </SecondaryButton>
+                                <PrimaryButton
+                                    type="button"
+                                    class="justify-center"
+                                    :disabled="reviewForm.processing"
+                                    @click="savePackageEdit"
+                                >
+                                    Save
+                                </PrimaryButton>
+                            </template>
+                            <SecondaryButton
+                                v-else
+                                type="button"
+                                class="justify-center"
+                                @click="startPackageEdit"
+                            >
+                                <span class="inline-flex items-center gap-1.5">
+                                    <AppIcon name="pencil" class="h-4 w-4" />
+                                    Edit
+                                </span>
+                            </SecondaryButton>
                         </div>
                     </div>
 
@@ -446,139 +676,403 @@ function badge(status) {
                                 </tr>
                             </thead>
                             <tbody>
-                                <template v-for="group in ['core', 'strategic']" :key="group">
-                                    <tr v-if="sectionLayout[group].length" :class="group === 'core' ? 'bg-blue-50/90' : 'bg-amber-50/90'">
-                                        <td
-                                            colspan="17"
-                                            class="border border-slate-300 px-3 py-2 text-center text-[10px] font-bold uppercase tracking-wide"
-                                            :class="group === 'core' ? 'text-blue-900' : 'text-amber-900'"
-                                        >
-                                            {{ group === 'core' ? 'Core Functions' : 'Strategic Functions' }}
-                                            · {{ sectionWeightTotal(group).toFixed(0) }}%
-                                        </td>
-                                    </tr>
-                                    <template v-for="(fnGroup, fgIdx) in sectionLayout[group]" :key="group + '-' + fgIdx">
-                                        <tr v-if="fgIdx > 0" aria-hidden="true">
-                                            <td colspan="17" class="h-3 border border-slate-300 bg-white p-0"></td>
+                                <!-- Package edit phase (5 fields editable) -->
+                                <template v-if="isPackageEditing">
+                                    <template v-for="groupType in ['core', 'strategic']" :key="'edit-' + groupType">
+                                        <tr :class="groupType === 'core' ? 'bg-blue-50/90' : 'bg-amber-50/90'">
+                                            <td
+                                                colspan="17"
+                                                class="border border-slate-300 px-3 py-2 text-center text-[10px] font-bold uppercase tracking-wide"
+                                                :class="groupType === 'core' ? 'text-blue-900' : 'text-amber-900'"
+                                            >
+                                                {{ groupType === 'core' ? 'Core Functions' : 'Strategic Functions' }}
+                                                · {{ sectionWeightTotalEditable(groupType).toFixed(0) }}%
+                                            </td>
                                         </tr>
-                                        <tr
-                                            v-for="(row, ri) in fnGroup.rows"
-                                            :key="row.commitment.id + '-' + row.lineIndex"
-                                            class="align-top"
-                                        >
-                                            <td
-                                                v-if="ri === 0"
-                                                :rowspan="fnGroup.rowCount"
-                                                class="border border-slate-300 px-2 py-1 align-top font-semibold text-slate-800"
+
+                                        <template v-for="(fnGroup, fgIdx) in editableGroups[groupType]" :key="groupType + '-' + fnGroup.key">
+                                            <tr v-if="fgIdx > 0" aria-hidden="true">
+                                                <td colspan="17" class="h-3 border border-slate-300 bg-white p-0"></td>
+                                            </tr>
+                                            <tr
+                                                v-for="(rowIndex, ri) in fnGroup.indexes"
+                                                :key="reviewForm.commitments[rowIndex]._uid"
+                                                class="align-top"
                                             >
-                                                {{ fnGroup.title }}
-                                            </td>
-                                            <td class="border border-slate-300 px-2 py-1 text-slate-700">{{ row.line }}</td>
-                                            <td
-                                                v-if="row.lineIndex === 0"
-                                                :rowspan="row.lineCount"
-                                                class="border border-slate-300 px-2 py-1 text-center font-medium text-slate-800"
-                                            >
-                                                {{ row.commitment.weight != null ? Number(row.commitment.weight).toFixed(0) + '%' : '—' }}
-                                            </td>
-                                            <td
-                                                v-if="row.lineIndex === 0"
-                                                :rowspan="row.lineCount"
-                                                class="border border-slate-300 px-2 py-1 text-center text-slate-700"
-                                            >
-                                                {{ row.commitment.annual_office_target ?? '—' }}
-                                            </td>
-                                            <td
-                                                v-if="row.lineIndex === 0"
-                                                :rowspan="row.lineCount"
-                                                class="border border-slate-300 px-2 py-1 text-center text-slate-700"
-                                            >
-                                                {{ row.commitment.individual_annual_targets ?? '—' }}
-                                            </td>
-                                            <template v-if="row.lineIndex === 0 && ratingRow(row.commitment.id)">
-                                                <td :rowspan="row.lineCount" class="border border-slate-300 px-1 py-1">
+                                                <td
+                                                    v-if="ri === 0"
+                                                    :rowspan="fnGroup.indexes.length"
+                                                    class="border border-slate-300 px-2 py-1 align-top"
+                                                >
                                                     <TextInput
-                                                        v-if="isEditable"
-                                                        v-model="ratingRow(row.commitment.id).rating_q3_target"
-                                                        type="number"
-                                                        step="1"
-                                                        min="0"
-                                                        class="w-16 text-xs"
-                                                        @change="applySuggestedRatings(ratingRow(row.commitment.id))"
+                                                        :model-value="fnGroup.title"
+                                                        type="text"
+                                                        class="block w-full text-xs"
+                                                        placeholder="e.g. Development of Standards..."
+                                                        @update:model-value="syncGroupTitle(fnGroup, $event)"
                                                     />
-                                                    <span v-else class="block text-center text-slate-700">{{ formatWholeNumber(row.commitment.rating_q3_target) }}</span>
+                                                    <InputError class="mt-1" :message="reviewForm.errors[`commitments.${fnGroup.indexes[0]}.title`]" />
+                                                    <p class="mt-1 text-[10px] text-slate-500">
+                                                        Σ wt: <strong>{{ groupWeightTotal(fnGroup).toFixed(0) }}%</strong>
+                                                    </p>
+                                                    <div class="mt-2 flex flex-wrap gap-1">
+                                                        <button
+                                                            type="button"
+                                                            class="inline-flex items-center rounded border border-blue-200 bg-blue-50 px-2 py-1 text-[10px] font-semibold text-blue-700 hover:bg-blue-100"
+                                                            :class="groupType === 'strategic' ? 'border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100' : ''"
+                                                            @click="addItemRow(fnGroup)"
+                                                        >
+                                                            + Add row
+                                                        </button>
+                                                        <button
+                                                            v-if="editableGroups[groupType].length > 1"
+                                                            type="button"
+                                                            class="inline-flex items-center rounded border border-rose-200 bg-rose-50 px-2 py-1 text-[10px] font-semibold text-rose-700 hover:bg-rose-100"
+                                                            @click="removeFunctionGroup(fnGroup)"
+                                                        >
+                                                            − Remove function
+                                                        </button>
+                                                    </div>
                                                 </td>
-                                                <td :rowspan="row.lineCount" class="border border-slate-300 px-1 py-1">
+                                                <td class="border border-slate-300 px-2 py-1 align-top">
+                                                    <textarea
+                                                        v-model="reviewForm.commitments[rowIndex].description"
+                                                        rows="3"
+                                                        class="block w-full rounded-md border-gray-300 text-xs shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                                                        placeholder="One indicator per line"
+                                                    />
+                                                    <button
+                                                        v-if="fnGroup.indexes.length > 1"
+                                                        type="button"
+                                                        class="mt-1 inline-flex items-center rounded border border-rose-200 bg-rose-50 px-2 py-0.5 text-[10px] font-semibold text-rose-700 hover:bg-rose-100"
+                                                        @click="removeItemRow(rowIndex)"
+                                                    >
+                                                        × Remove row
+                                                    </button>
+                                                    <InputError class="mt-1" :message="reviewForm.errors[`commitments.${rowIndex}.description`]" />
+                                                </td>
+                                                <td class="border border-slate-300 px-1 py-1 align-top">
                                                     <TextInput
-                                                        v-if="isEditable"
-                                                        v-model="ratingRow(row.commitment.id).rating_q3_actual"
+                                                        v-model="reviewForm.commitments[rowIndex].weight"
                                                         type="number"
-                                                        step="1"
+                                                        step="0.01"
                                                         min="0"
+                                                        max="100"
                                                         class="w-16 text-xs"
-                                                        @change="applySuggestedRatings(ratingRow(row.commitment.id))"
+                                                        placeholder="—"
+                                                        @change="onWeightChange(reviewForm.commitments[rowIndex])"
                                                     />
-                                                    <span v-else class="block text-center text-slate-700">{{ formatWholeNumber(row.commitment.rating_q3_actual) }}</span>
+                                                    <InputError class="mt-1" :message="reviewForm.errors[`commitments.${rowIndex}.weight`]" />
                                                 </td>
-                                                <td :rowspan="row.lineCount" class="border border-slate-300 px-1 py-1">
+                                                <td class="border border-slate-300 px-1 py-1 align-top">
                                                     <TextInput
-                                                        v-if="isEditable"
-                                                        v-model="ratingRow(row.commitment.id).rating_q4_target"
-                                                        type="number"
-                                                        step="1"
-                                                        min="0"
-                                                        class="w-16 text-xs"
-                                                        @change="applySuggestedRatings(ratingRow(row.commitment.id))"
+                                                        v-model="reviewForm.commitments[rowIndex].annual_office_target"
+                                                        type="text"
+                                                        class="w-24 text-xs"
                                                     />
-                                                    <span v-else class="block text-center text-slate-700">{{ formatWholeNumber(row.commitment.rating_q4_target) }}</span>
                                                 </td>
-                                                <td :rowspan="row.lineCount" class="border border-slate-300 px-1 py-1">
+                                                <td class="border border-slate-300 px-1 py-1 align-top">
                                                     <TextInput
-                                                        v-if="isEditable"
-                                                        v-model="ratingRow(row.commitment.id).rating_q4_actual"
-                                                        type="number"
-                                                        step="1"
-                                                        min="0"
-                                                        class="w-16 text-xs"
-                                                        @change="applySuggestedRatings(ratingRow(row.commitment.id))"
+                                                        v-model="reviewForm.commitments[rowIndex].individual_annual_targets"
+                                                        type="text"
+                                                        class="w-24 text-xs"
                                                     />
-                                                    <span v-else class="block text-center text-slate-700">{{ formatWholeNumber(row.commitment.rating_q4_actual) }}</span>
                                                 </td>
-                                                <td :rowspan="row.lineCount" class="border border-slate-300 px-2 py-1 text-center text-slate-700">
-                                                    {{ formatAccomplishmentValue(rowPreview(row.commitment, ratingRow(row.commitment.id)).targetTotal) }}
+                                                <td class="border border-slate-300 px-2 py-1 text-center text-slate-500">
+                                                    {{ formatWholeNumber(reviewForm.commitments[rowIndex].rating_q3_target) }}
                                                 </td>
-                                                <td :rowspan="row.lineCount" class="border border-slate-300 px-2 py-1 text-center text-slate-700">
-                                                    {{ formatAccomplishmentValue(rowPreview(row.commitment, ratingRow(row.commitment.id)).actualTotal) }}
+                                                <td class="border border-slate-300 px-2 py-1 text-center text-slate-500">
+                                                    {{ formatWholeNumber(reviewForm.commitments[rowIndex].rating_q3_actual) }}
                                                 </td>
-                                                <td :rowspan="row.lineCount" class="border border-slate-300 px-2 py-1 text-center text-slate-700">
-                                                    {{ formatAccomplishmentPercent(rowPreview(row.commitment, ratingRow(row.commitment.id)).percent) }}
+                                                <td class="border border-slate-300 px-2 py-1 text-center text-slate-500">
+                                                    {{ formatWholeNumber(reviewForm.commitments[rowIndex].rating_q4_target) }}
                                                 </td>
-                                                <td :rowspan="row.lineCount" class="border border-slate-300 px-1 py-1">
-                                                    <TextInput v-if="isEditable && row.commitment.weight != null" v-model="ratingRow(row.commitment.id).rating_quality" type="number" min="1" max="5" class="w-14 text-xs" />
-                                                    <span v-else class="block text-center text-slate-700">{{ row.commitment.weight != null ? (row.commitment.rating_quality ?? '—') : '—' }}</span>
+                                                <td class="border border-slate-300 px-2 py-1 text-center text-slate-500">
+                                                    {{ formatWholeNumber(reviewForm.commitments[rowIndex].rating_q4_actual) }}
                                                 </td>
-                                                <td :rowspan="row.lineCount" class="border border-slate-300 px-1 py-1">
-                                                    <TextInput v-if="isEditable && row.commitment.weight != null" v-model="ratingRow(row.commitment.id).rating_efficiency" type="number" min="1" max="5" class="w-14 text-xs" />
-                                                    <span v-else class="block text-center text-slate-700">{{ row.commitment.weight != null ? (row.commitment.rating_efficiency ?? '—') : '—' }}</span>
+                                                <td class="border border-slate-300 px-2 py-1 text-center text-slate-500">
+                                                    {{ formatAccomplishmentValue(rowPreview(reviewForm.commitments[rowIndex]).targetTotal) }}
                                                 </td>
-                                                <td :rowspan="row.lineCount" class="border border-slate-300 px-1 py-1">
-                                                    <TextInput v-if="isEditable && row.commitment.weight != null" v-model="ratingRow(row.commitment.id).rating_timeliness" type="number" min="1" max="5" class="w-14 text-xs" />
-                                                    <span v-else class="block text-center text-slate-700">{{ row.commitment.weight != null ? (row.commitment.rating_timeliness ?? '—') : '—' }}</span>
+                                                <td class="border border-slate-300 px-2 py-1 text-center text-slate-500">
+                                                    {{ formatAccomplishmentValue(rowPreview(reviewForm.commitments[rowIndex]).actualTotal) }}
                                                 </td>
-                                                <td :rowspan="row.lineCount" class="border border-slate-300 px-2 py-1 text-center font-semibold text-slate-800">
-                                                    {{ rowPreview(row.commitment, ratingRow(row.commitment.id)).avg != null ? rowPreview(row.commitment, ratingRow(row.commitment.id)).avg.toFixed(2) : '—' }}
+                                                <td class="border border-slate-300 px-2 py-1 text-center text-slate-500">
+                                                    {{ formatAccomplishmentPercent(rowPreview(reviewForm.commitments[rowIndex]).percent) }}
                                                 </td>
-                                                <td :rowspan="row.lineCount" class="border border-slate-300 px-2 py-1 text-center font-semibold text-amber-800">
-                                                    {{ rowWeightedDisplay(row.commitment, ratingRow(row.commitment.id)) }}
+                                                <td class="border border-slate-300 px-2 py-1 text-center text-slate-500">
+                                                    {{ reviewForm.commitments[rowIndex].rating_quality ?? '—' }}
                                                 </td>
-                                            </template>
+                                                <td class="border border-slate-300 px-2 py-1 text-center text-slate-500">
+                                                    {{ reviewForm.commitments[rowIndex].rating_efficiency ?? '—' }}
+                                                </td>
+                                                <td class="border border-slate-300 px-2 py-1 text-center text-slate-500">
+                                                    {{ reviewForm.commitments[rowIndex].rating_timeliness ?? '—' }}
+                                                </td>
+                                                <td class="border border-slate-300 px-2 py-1 text-center font-semibold text-slate-500">
+                                                    {{ rowPreview(reviewForm.commitments[rowIndex]).avg != null ? rowPreview(reviewForm.commitments[rowIndex]).avg.toFixed(2) : '—' }}
+                                                </td>
+                                                <td class="border border-slate-300 px-2 py-1 text-center font-semibold text-slate-500">
+                                                    {{ rowPreview(reviewForm.commitments[rowIndex]).weighted != null ? rowPreview(reviewForm.commitments[rowIndex]).weighted.toFixed(2) : '—' }}
+                                                </td>
+                                            </tr>
+                                        </template>
+
+                                        <tr :class="groupType === 'core' ? 'bg-blue-50/40' : 'bg-amber-50/40'">
+                                            <td colspan="17" class="border border-slate-300 px-2 py-2 text-center">
+                                                <button
+                                                    type="button"
+                                                    class="inline-flex items-center rounded-md border bg-white px-3 py-1.5 text-[11px] font-semibold shadow-sm"
+                                                    :class="groupType === 'core'
+                                                        ? 'border-blue-300 text-blue-700 hover:bg-blue-50'
+                                                        : 'border-amber-300 text-amber-800 hover:bg-amber-50'"
+                                                    @click="addFunctionEntry(groupType)"
+                                                >
+                                                    + Add {{ groupType === 'core' ? 'Core' : 'Strategic' }} Function
+                                                </button>
+                                            </td>
                                         </tr>
                                     </template>
                                 </template>
+
+                                <!-- Rate phase: package fields locked, ratings editable -->
+                                <template v-else-if="isEditable">
+                                    <template v-for="groupType in ['core', 'strategic']" :key="'rate-' + groupType">
+                                        <tr
+                                            v-if="editableGroups[groupType].length"
+                                            :class="groupType === 'core' ? 'bg-blue-50/90' : 'bg-amber-50/90'"
+                                        >
+                                            <td
+                                                colspan="17"
+                                                class="border border-slate-300 px-3 py-2 text-center text-[10px] font-bold uppercase tracking-wide"
+                                                :class="groupType === 'core' ? 'text-blue-900' : 'text-amber-900'"
+                                            >
+                                                {{ groupType === 'core' ? 'Core Functions' : 'Strategic Functions' }}
+                                                · {{ sectionWeightTotalEditable(groupType).toFixed(0) }}%
+                                            </td>
+                                        </tr>
+                                        <template v-for="(fnGroup, fgIdx) in editableGroups[groupType]" :key="'rate-' + groupType + '-' + fnGroup.key">
+                                            <tr v-if="fgIdx > 0" aria-hidden="true">
+                                                <td colspan="17" class="h-3 border border-slate-300 bg-white p-0"></td>
+                                            </tr>
+                                            <tr
+                                                v-for="(rowIndex, ri) in fnGroup.indexes"
+                                                :key="'rate-' + reviewForm.commitments[rowIndex]._uid"
+                                                class="align-top"
+                                            >
+                                                <td
+                                                    v-if="ri === 0"
+                                                    :rowspan="fnGroup.indexes.length"
+                                                    class="border border-slate-300 px-2 py-1 align-top font-semibold text-slate-800"
+                                                >
+                                                    {{ fnGroup.title || '—' }}
+                                                </td>
+                                                <td class="border border-slate-300 px-2 py-1 text-slate-700 whitespace-pre-line">
+                                                    {{ reviewForm.commitments[rowIndex].description || '—' }}
+                                                </td>
+                                                <td class="border border-slate-300 px-2 py-1 text-center font-medium text-slate-800">
+                                                    {{ reviewForm.commitments[rowIndex].weight != null && reviewForm.commitments[rowIndex].weight !== ''
+                                                        ? Number(reviewForm.commitments[rowIndex].weight).toFixed(0) + '%'
+                                                        : '—' }}
+                                                </td>
+                                                <td class="border border-slate-300 px-2 py-1 text-center text-slate-700">
+                                                    {{ reviewForm.commitments[rowIndex].annual_office_target || '—' }}
+                                                </td>
+                                                <td class="border border-slate-300 px-2 py-1 text-center text-slate-700">
+                                                    {{ reviewForm.commitments[rowIndex].individual_annual_targets || '—' }}
+                                                </td>
+                                                <td class="border border-slate-300 px-1 py-1">
+                                                    <TextInput
+                                                        v-model="reviewForm.commitments[rowIndex].rating_q3_target"
+                                                        type="number"
+                                                        step="1"
+                                                        min="0"
+                                                        class="w-16 text-xs"
+                                                        @change="applySuggestedRatings(reviewForm.commitments[rowIndex])"
+                                                    />
+                                                </td>
+                                                <td class="border border-slate-300 px-1 py-1">
+                                                    <TextInput
+                                                        v-model="reviewForm.commitments[rowIndex].rating_q3_actual"
+                                                        type="number"
+                                                        step="1"
+                                                        min="0"
+                                                        class="w-16 text-xs"
+                                                        @change="applySuggestedRatings(reviewForm.commitments[rowIndex])"
+                                                    />
+                                                </td>
+                                                <td class="border border-slate-300 px-1 py-1">
+                                                    <TextInput
+                                                        v-model="reviewForm.commitments[rowIndex].rating_q4_target"
+                                                        type="number"
+                                                        step="1"
+                                                        min="0"
+                                                        class="w-16 text-xs"
+                                                        @change="applySuggestedRatings(reviewForm.commitments[rowIndex])"
+                                                    />
+                                                </td>
+                                                <td class="border border-slate-300 px-1 py-1">
+                                                    <TextInput
+                                                        v-model="reviewForm.commitments[rowIndex].rating_q4_actual"
+                                                        type="number"
+                                                        step="1"
+                                                        min="0"
+                                                        class="w-16 text-xs"
+                                                        @change="applySuggestedRatings(reviewForm.commitments[rowIndex])"
+                                                    />
+                                                </td>
+                                                <td class="border border-slate-300 px-2 py-1 text-center text-slate-700">
+                                                    {{ formatAccomplishmentValue(rowPreview(reviewForm.commitments[rowIndex]).targetTotal) }}
+                                                </td>
+                                                <td class="border border-slate-300 px-2 py-1 text-center text-slate-700">
+                                                    {{ formatAccomplishmentValue(rowPreview(reviewForm.commitments[rowIndex]).actualTotal) }}
+                                                </td>
+                                                <td class="border border-slate-300 px-2 py-1 text-center text-slate-700">
+                                                    {{ formatAccomplishmentPercent(rowPreview(reviewForm.commitments[rowIndex]).percent) }}
+                                                </td>
+                                                <td class="border border-slate-300 px-1 py-1">
+                                                    <TextInput
+                                                        v-if="reviewForm.commitments[rowIndex].weight != null && reviewForm.commitments[rowIndex].weight !== ''"
+                                                        v-model="reviewForm.commitments[rowIndex].rating_quality"
+                                                        type="number"
+                                                        min="1"
+                                                        max="5"
+                                                        class="w-14 text-xs"
+                                                    />
+                                                    <span v-else class="block text-center text-slate-400">—</span>
+                                                </td>
+                                                <td class="border border-slate-300 px-1 py-1">
+                                                    <TextInput
+                                                        v-if="reviewForm.commitments[rowIndex].weight != null && reviewForm.commitments[rowIndex].weight !== ''"
+                                                        v-model="reviewForm.commitments[rowIndex].rating_efficiency"
+                                                        type="number"
+                                                        min="1"
+                                                        max="5"
+                                                        class="w-14 text-xs"
+                                                    />
+                                                    <span v-else class="block text-center text-slate-400">—</span>
+                                                </td>
+                                                <td class="border border-slate-300 px-1 py-1">
+                                                    <TextInput
+                                                        v-if="reviewForm.commitments[rowIndex].weight != null && reviewForm.commitments[rowIndex].weight !== ''"
+                                                        v-model="reviewForm.commitments[rowIndex].rating_timeliness"
+                                                        type="number"
+                                                        min="1"
+                                                        max="5"
+                                                        class="w-14 text-xs"
+                                                    />
+                                                    <span v-else class="block text-center text-slate-400">—</span>
+                                                </td>
+                                                <td class="border border-slate-300 px-2 py-1 text-center font-semibold text-slate-800">
+                                                    {{ rowPreview(reviewForm.commitments[rowIndex]).avg != null ? rowPreview(reviewForm.commitments[rowIndex]).avg.toFixed(2) : '—' }}
+                                                </td>
+                                                <td class="border border-slate-300 px-2 py-1 text-center font-semibold text-amber-800">
+                                                    {{ rowPreview(reviewForm.commitments[rowIndex]).weighted != null ? rowPreview(reviewForm.commitments[rowIndex]).weighted.toFixed(2) : '—' }}
+                                                </td>
+                                            </tr>
+                                        </template>
+                                    </template>
+                                </template>
+
+                                <!-- Fully read-only (approved / other statuses) -->
+                                <template v-else>
+                                    <template v-for="group in ['core', 'strategic']" :key="group">
+                                        <tr v-if="sectionLayout[group].length" :class="group === 'core' ? 'bg-blue-50/90' : 'bg-amber-50/90'">
+                                            <td
+                                                colspan="17"
+                                                class="border border-slate-300 px-3 py-2 text-center text-[10px] font-bold uppercase tracking-wide"
+                                                :class="group === 'core' ? 'text-blue-900' : 'text-amber-900'"
+                                            >
+                                                {{ group === 'core' ? 'Core Functions' : 'Strategic Functions' }}
+                                                · {{ sectionWeightTotal(group).toFixed(0) }}%
+                                            </td>
+                                        </tr>
+                                        <template v-for="(fnGroup, fgIdx) in sectionLayout[group]" :key="group + '-' + fgIdx">
+                                            <tr v-if="fgIdx > 0" aria-hidden="true">
+                                                <td colspan="17" class="h-3 border border-slate-300 bg-white p-0"></td>
+                                            </tr>
+                                            <tr
+                                                v-for="(row, ri) in fnGroup.rows"
+                                                :key="row.commitment.id + '-' + row.lineIndex"
+                                                class="align-top"
+                                            >
+                                                <td
+                                                    v-if="ri === 0"
+                                                    :rowspan="fnGroup.rowCount"
+                                                    class="border border-slate-300 px-2 py-1 align-top font-semibold text-slate-800"
+                                                >
+                                                    {{ fnGroup.title }}
+                                                </td>
+                                                <td class="border border-slate-300 px-2 py-1 text-slate-700">{{ row.line }}</td>
+                                                <td
+                                                    v-if="row.lineIndex === 0"
+                                                    :rowspan="row.lineCount"
+                                                    class="border border-slate-300 px-2 py-1 text-center font-medium text-slate-800"
+                                                >
+                                                    {{ row.commitment.weight != null ? Number(row.commitment.weight).toFixed(0) + '%' : '—' }}
+                                                </td>
+                                                <td
+                                                    v-if="row.lineIndex === 0"
+                                                    :rowspan="row.lineCount"
+                                                    class="border border-slate-300 px-2 py-1 text-center text-slate-700"
+                                                >
+                                                    {{ row.commitment.annual_office_target ?? '—' }}
+                                                </td>
+                                                <td
+                                                    v-if="row.lineIndex === 0"
+                                                    :rowspan="row.lineCount"
+                                                    class="border border-slate-300 px-2 py-1 text-center text-slate-700"
+                                                >
+                                                    {{ row.commitment.individual_annual_targets ?? '—' }}
+                                                </td>
+                                                <template v-if="row.lineIndex === 0 && ratingRowReadonly(row.commitment.id)">
+                                                    <td :rowspan="row.lineCount" class="border border-slate-300 px-2 py-1 text-center text-slate-700">
+                                                        {{ formatWholeNumber(row.commitment.rating_q3_target) }}
+                                                    </td>
+                                                    <td :rowspan="row.lineCount" class="border border-slate-300 px-2 py-1 text-center text-slate-700">
+                                                        {{ formatWholeNumber(row.commitment.rating_q3_actual) }}
+                                                    </td>
+                                                    <td :rowspan="row.lineCount" class="border border-slate-300 px-2 py-1 text-center text-slate-700">
+                                                        {{ formatWholeNumber(row.commitment.rating_q4_target) }}
+                                                    </td>
+                                                    <td :rowspan="row.lineCount" class="border border-slate-300 px-2 py-1 text-center text-slate-700">
+                                                        {{ formatWholeNumber(row.commitment.rating_q4_actual) }}
+                                                    </td>
+                                                    <td :rowspan="row.lineCount" class="border border-slate-300 px-2 py-1 text-center text-slate-700">
+                                                        {{ formatAccomplishmentValue(rowPreview(ratingRowReadonly(row.commitment.id)).targetTotal) }}
+                                                    </td>
+                                                    <td :rowspan="row.lineCount" class="border border-slate-300 px-2 py-1 text-center text-slate-700">
+                                                        {{ formatAccomplishmentValue(rowPreview(ratingRowReadonly(row.commitment.id)).actualTotal) }}
+                                                    </td>
+                                                    <td :rowspan="row.lineCount" class="border border-slate-300 px-2 py-1 text-center text-slate-700">
+                                                        {{ formatAccomplishmentPercent(rowPreview(ratingRowReadonly(row.commitment.id)).percent) }}
+                                                    </td>
+                                                    <td :rowspan="row.lineCount" class="border border-slate-300 px-2 py-1 text-center text-slate-700">
+                                                        {{ row.commitment.weight != null ? (row.commitment.rating_quality ?? '—') : '—' }}
+                                                    </td>
+                                                    <td :rowspan="row.lineCount" class="border border-slate-300 px-2 py-1 text-center text-slate-700">
+                                                        {{ row.commitment.weight != null ? (row.commitment.rating_efficiency ?? '—') : '—' }}
+                                                    </td>
+                                                    <td :rowspan="row.lineCount" class="border border-slate-300 px-2 py-1 text-center text-slate-700">
+                                                        {{ row.commitment.weight != null ? (row.commitment.rating_timeliness ?? '—') : '—' }}
+                                                    </td>
+                                                    <td :rowspan="row.lineCount" class="border border-slate-300 px-2 py-1 text-center font-semibold text-slate-800">
+                                                        {{ rowPreview(ratingRowReadonly(row.commitment.id)).avg != null ? rowPreview(ratingRowReadonly(row.commitment.id)).avg.toFixed(2) : (row.commitment.rating_average != null ? Number(row.commitment.rating_average).toFixed(2) : '—') }}
+                                                    </td>
+                                                    <td :rowspan="row.lineCount" class="border border-slate-300 px-2 py-1 text-center font-semibold text-amber-800">
+                                                        {{ rowWeightedDisplay(row.commitment, ratingRowReadonly(row.commitment.id)) }}
+                                                    </td>
+                                                </template>
+                                            </tr>
+                                        </template>
+                                    </template>
+                                </template>
+
                                 <tr class="bg-slate-100 font-semibold">
                                     <td colspan="2" class="border border-slate-300 px-2 py-1 text-right">TOTAL</td>
                                     <td class="border border-slate-300 px-2 py-1 text-center">
-                                        {{ sortedCommitments.reduce((a, c) => a + Number(c.weight || 0), 0).toFixed(0) }}%
+                                        {{ isEditable
+                                            ? reviewForm.commitments.reduce((a, c) => a + Number(c.weight || 0), 0).toFixed(0)
+                                            : sortedCommitments.reduce((a, c) => a + Number(c.weight || 0), 0).toFixed(0) }}%
                                     </td>
                                     <td colspan="2" class="border border-slate-300"></td>
                                     <td colspan="7" class="border border-slate-300"></td>
@@ -604,6 +1098,12 @@ function badge(status) {
                         </table>
                     </div>
 
+                    <p
+                        v-if="isPackageEditing"
+                        class="mt-2 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-800"
+                    >
+                        Finish package edits with <strong>Save</strong> or <strong>Cancel</strong> before approving or returning.
+                    </p>
                     <InputError class="mt-2" :message="reviewForm.errors.commitments" />
                 </div>
 
@@ -617,7 +1117,7 @@ function badge(status) {
                     <EvidencePanel :items="packageEvidence" :show-form="false" />
                 </div>
 
-                <div v-if="isEditable" class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+                <div v-if="isEditable && !isPackageEditing" class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
                     <div class="flex items-start gap-3">
                         <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-100 text-blue-700">
                             <AppIcon name="check-badge" class="h-5 w-5" />
@@ -681,7 +1181,7 @@ function badge(status) {
                     </div>
                 </div>
 
-                <div v-else-if="submission.supervisor_feedback" class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm text-sm sm:p-5">
+                <div v-else-if="!isEditable && submission.supervisor_feedback" class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm text-sm sm:p-5">
                     <div class="flex items-start gap-3">
                         <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
                             <AppIcon name="pencil" class="h-4 w-4" />

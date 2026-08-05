@@ -18,19 +18,27 @@ const sortedCommitments = computed(() =>
         const ta = typeOrder[a.function_type] ?? 9;
         const tb = typeOrder[b.function_type] ?? 9;
         if (ta !== tb) return ta - tb;
-        return (a.title || '').localeCompare(b.title || '');
+
+        const titleCmp = (a.title || '').localeCompare(b.title || '');
+        if (titleCmp !== 0) return titleCmp;
+
+        return Number(a.id || 0) - Number(b.id || 0);
     }),
 );
 
-function indicatorLines(c) {
-    const desc = (c?.description ?? '').trim();
-    if (!desc) return [c?.title ?? ''];
-    const lines = desc.split(/\r\n|\r|\n/).map((l) => l.trim()).filter(Boolean);
-    return lines.length ? lines : [c?.title ?? ''];
-}
-
 function functionTitleKey(c) {
     return (c.title || '').trim() || '(untitled function)';
+}
+
+function indicatorText(c) {
+    const desc = (c?.description ?? '').trim();
+    return desc || (c?.title ?? '') || '—';
+}
+
+function displayValue(value) {
+    if (value == null) return '—';
+    const text = String(value).trim();
+    return text === '' ? '—' : text;
 }
 
 function buildSectionLayout(functionType) {
@@ -49,24 +57,10 @@ function buildSectionLayout(functionType) {
 
     return order.map((key) => {
         const group = map.get(key);
-        const rows = [];
-
-        for (const c of group.commitments) {
-            const lines = indicatorLines(c);
-            lines.forEach((line, lineIndex) => {
-                rows.push({
-                    commitment: c,
-                    line,
-                    lineIndex,
-                    lineCount: lines.length,
-                });
-            });
-        }
-
         return {
             title: group.title,
-            rows,
-            rowCount: rows.length,
+            commitments: group.commitments,
+            rowCount: group.commitments.length,
         };
     });
 }
@@ -97,13 +91,13 @@ const hasRows = computed(() => sortedCommitments.value.length > 0);
         <table class="min-w-[720px] w-full border-collapse text-[11px]">
             <thead class="bg-slate-100 text-center font-semibold uppercase tracking-wide text-slate-700">
                 <tr>
-                    <th class="border border-slate-300 px-2 py-1.5" rowspan="2">Function</th>
-                    <th class="border border-slate-300 px-2 py-1.5" rowspan="2">
+                    <th class="border border-slate-300 px-2 py-1.5">Function</th>
+                    <th class="border border-slate-300 px-2 py-1.5">
                         Services / Programs / Indicators
                     </th>
-                    <th class="border border-slate-300 px-2 py-1.5" rowspan="2">Weight</th>
-                    <th class="border border-slate-300 px-2 py-1.5" rowspan="2">Annual Office Target</th>
-                    <th class="border border-slate-300 px-2 py-1.5" rowspan="2">Individual Annual Targets</th>
+                    <th class="border border-slate-300 px-2 py-1.5">Weight</th>
+                    <th class="border border-slate-300 px-2 py-1.5">Annual Office Target</th>
+                    <th class="border border-slate-300 px-2 py-1.5">Individual Annual Targets</th>
                 </tr>
             </thead>
             <tbody>
@@ -123,8 +117,8 @@ const hasRows = computed(() => sortedCommitments.value.length > 0);
                             <td colspan="5" class="h-2 border border-slate-300 bg-white p-0"></td>
                         </tr>
                         <tr
-                            v-for="(row, ri) in fnGroup.rows"
-                            :key="row.commitment.id + '-' + row.lineIndex"
+                            v-for="(commitment, ri) in fnGroup.commitments"
+                            :key="commitment.id ?? `${group}-${fgIdx}-${ri}`"
                             class="align-top"
                         >
                             <td
@@ -135,27 +129,19 @@ const hasRows = computed(() => sortedCommitments.value.length > 0);
                             >
                                 {{ fnGroup.title }}
                             </td>
-                            <td class="border border-slate-300 px-2 py-1.5 text-slate-700">{{ row.line }}</td>
-                            <td
-                                v-if="row.lineIndex === 0"
-                                :rowspan="row.lineCount"
-                                class="border border-slate-300 px-2 py-1.5 text-center font-medium text-slate-800"
-                            >
-                                {{ row.commitment.weight != null ? Number(row.commitment.weight).toFixed(0) + '%' : '—' }}
+                            <td class="border border-slate-300 px-2 py-1.5 whitespace-pre-line text-slate-700">
+                                {{ indicatorText(commitment) }}
                             </td>
-                            <td
-                                v-if="row.lineIndex === 0"
-                                :rowspan="row.lineCount"
-                                class="border border-slate-300 px-2 py-1.5 text-center text-slate-700"
-                            >
-                                {{ row.commitment.annual_office_target || '—' }}
+                            <td class="border border-slate-300 px-2 py-1.5 text-center font-medium text-slate-800">
+                                {{ commitment.weight != null && commitment.weight !== ''
+                                    ? Number(commitment.weight).toFixed(0) + '%'
+                                    : '—' }}
                             </td>
-                            <td
-                                v-if="row.lineIndex === 0"
-                                :rowspan="row.lineCount"
-                                class="border border-slate-300 px-2 py-1.5 text-center text-slate-700"
-                            >
-                                {{ row.commitment.individual_annual_targets || '—' }}
+                            <td class="border border-slate-300 px-2 py-1.5 text-center text-slate-700">
+                                {{ displayValue(commitment.annual_office_target) }}
+                            </td>
+                            <td class="border border-slate-300 px-2 py-1.5 text-center text-slate-700">
+                                {{ displayValue(commitment.individual_annual_targets) }}
                             </td>
                         </tr>
                     </template>

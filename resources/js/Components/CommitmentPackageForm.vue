@@ -122,8 +122,8 @@ function removeFunctionEntry(eIdx) {
 <template>
     <div class="space-y-6">
         <p class="text-xs text-slate-500">
-            Fill in your commitments like the IPCR form. Use <strong>+ Add row</strong> under a Function to list multiple
-            Services/Indicators with their own Weight, Annual Office Target and Individual Annual Targets.
+            Fill in your commitments like the IPCR form. Use <strong>+ Add row</strong> under a Function for each
+            Services/Indicator that has its own Weight, Annual Office Target, and Individual Annual Targets.
         </p>
 
         <div class="overflow-x-auto rounded-lg border border-slate-300">
@@ -137,7 +137,9 @@ function removeFunctionEntry(eIdx) {
                         <th class="border border-slate-300 px-2 py-2 text-center" style="min-width: 260px">
                             Services / Programs / Projects / Indicators
                             <br />
-                            <span class="text-[10px] font-normal normal-case text-slate-500">(one line per indicator — use Enter)</span>
+                            <span class="text-[10px] font-normal normal-case text-slate-500">
+                                One indicator per row — use + Add row for another indicator
+                            </span>
                         </th>
                         <th class="border border-slate-300 px-2 py-2 text-center" style="min-width: 72px">Weight</th>
                         <th class="border border-slate-300 px-2 py-2 text-center" style="min-width: 110px">Annual Office Target</th>
