@@ -1,12 +1,14 @@
 <?php
 
 use App\Http\Controllers\Admin\EmployeeRatingController;
+use App\Http\Controllers\Admin\FormTemplateController;
 use App\Http\Controllers\Admin\ReportController;
 use App\Http\Controllers\Admin\TransferRequestController;
 use App\Http\Controllers\Admin\UserAdminController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\Employee\AccomplishmentController;
 use App\Http\Controllers\Employee\CommitmentController;
+use App\Http\Controllers\Employee\FormAnswerController;
 use App\Http\Controllers\Employee\RatingHistoryExportController;
 use App\Http\Controllers\Employee\SubmissionExportController;
 use App\Http\Controllers\Employee\SubmissionController;
@@ -36,6 +38,7 @@ Route::middleware(['auth', 'verified', 'active'])->group(function () {
         Route::patch('commitments/{commitment}', [CommitmentController::class, 'update'])->name('commitments.update');
         Route::patch('commitments/{commitment}/package', [CommitmentController::class, 'updateBatch'])->name('commitments.updateBatch');
         Route::delete('commitments/{commitment}', [CommitmentController::class, 'destroy'])->name('commitments.destroy');
+        Route::patch('form-answers', [FormAnswerController::class, 'update'])->name('form-answers.update');
         Route::post('accomplishments', [AccomplishmentController::class, 'store'])->name('accomplishments.store');
         Route::delete('accomplishments/{accomplishment}', [AccomplishmentController::class, 'destroy'])->name('accomplishments.destroy');
         Route::get('ratings/history-export', RatingHistoryExportController::class)->name('ratings.history.export');
@@ -92,6 +95,14 @@ Route::middleware(['auth', 'verified', 'active'])->group(function () {
         Route::post('users', [UserAdminController::class, 'store'])->name('users.store');
         Route::patch('users/{user}', [UserAdminController::class, 'update'])->name('users.update');
         Route::delete('users/{user}', [UserAdminController::class, 'destroy'])->name('users.destroy');
+        Route::get('forms', [FormTemplateController::class, 'index'])->name('forms.index');
+        Route::get('forms/create', [FormTemplateController::class, 'create'])->name('forms.create');
+        Route::post('forms', [FormTemplateController::class, 'store'])->name('forms.store');
+        Route::get('forms/{form}', [FormTemplateController::class, 'show'])->name('forms.show');
+        Route::get('forms/{form}/edit', [FormTemplateController::class, 'edit'])->name('forms.edit');
+        Route::patch('forms/{form}', [FormTemplateController::class, 'update'])->name('forms.update');
+        Route::post('forms/{form}/assign', [FormTemplateController::class, 'assign'])->name('forms.assign');
+        Route::delete('forms/{form}', [FormTemplateController::class, 'destroy'])->name('forms.destroy');
         Route::get('reports/ratings', [ReportController::class, 'ratings'])->name('reports.ratings');
         Route::get('reports/submissions/{submission}', [ReportController::class, 'showSubmission'])->name('reports.submissions.show');
         Route::get('reports/users.csv', [ReportController::class, 'usersCsv'])->name('reports.users');

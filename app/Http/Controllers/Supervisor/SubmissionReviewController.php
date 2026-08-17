@@ -163,82 +163,44 @@ class SubmissionReviewController extends Controller
                 $commitment->delete();
             }
 
-            if ($data['action'] === 'approve') {
-                $sumWeighted = 0.0;
-                $hasWeighted = false;
+            $sumWeighted = 0.0;
+            $hasWeighted = false;
 
-                foreach ($synced as $item) {
-                    $commitment = $item['model'];
-                    $row = $item['row'];
+            foreach ($synced as $item) {
+                $commitment = $item['model']->fresh();
+                $row = $item['row'];
 
-                    $q3Target = IpcrFormRatingCalculator::nullableWholeNumber($row['rating_q3_target'] ?? null);
-                    $q3Actual = IpcrFormRatingCalculator::nullableWholeNumber($row['rating_q3_actual'] ?? null);
-                    $q4Target = IpcrFormRatingCalculator::nullableWholeNumber($row['rating_q4_target'] ?? null);
-                    $q4Actual = IpcrFormRatingCalculator::nullableWholeNumber($row['rating_q4_actual'] ?? null);
-
-                    $totals = IpcrFormRatingCalculator::totalsFromQ3Q4(
-                        $q3Target,
-                        $q3Actual,
-                        $q4Target,
-                        $q4Actual,
-                    );
-
-                    if ($commitment->weight === null) {
-                        $commitment->update([
-                            'rating_q3_target' => $q3Target,
-                            'rating_q3_actual' => $q3Actual,
-                            'rating_q4_target' => $q4Target,
-                            'rating_q4_actual' => $q4Actual,
-                            'rating_target_total' => $totals['target_total'],
-                            'rating_actual_total' => $totals['actual_total'],
-                            'rating_percent' => $totals['percent'],
-                            'rating_quality' => null,
-                            'rating_efficiency' => null,
-                            'rating_timeliness' => null,
-                            'rating_average' => null,
-                            'rating_weighted' => null,
-                            'remarks' => null,
-                            'status' => CommitmentStatus::Approved,
-                        ]);
-
-                        continue;
-                    }
-
+                if ($data['action'] === 'approve' && $commitment->weight !== null) {
                     foreach (['rating_quality', 'rating_efficiency', 'rating_timeliness'] as $field) {
                         if (! isset($row[$field]) || ! is_numeric($row[$field])) {
-                            throw ValidationException::withMessages([
-                                'commitments' => 'Every commitment with a weight must have Quality, Efficiency, and Timeliness ratings (1–5).',
-                            ]);
+                            $auto = IpcrFormRatingCalculator::totalsFromQ3Q4(
+                                IpcrFormRatingCalculator::nullableWholeNumber($row['rating_q3_target'] ?? null),
+                                IpcrFormRatingCalculator::nullableWholeNumber($row['rating_q3_actual'] ?? null),
+                                IpcrFormRatingCalculator::nullableWholeNumber($row['rating_q4_target'] ?? null),
+                                IpcrFormRatingCalculator::nullableWholeNumber($row['rating_q4_actual'] ?? null),
+                            );
+                            if ($auto['percent'] === null) {
+                                throw ValidationException::withMessages([
+                                    'commitments' => 'Every commitment with a weight must have accomplishments so Quality, Efficiency, and Timeliness can be rated (1–5).',
+                                ]);
+                            }
                         }
                     }
+                }
 
-                    $scored = IpcrFormRatingCalculator::scoreRowFromRatings(
-                        (int) $row['rating_quality'],
-                        (int) $row['rating_efficiency'],
-                        (int) $row['rating_timeliness'],
-                        (float) $commitment->weight,
-                    );
+                IpcrFormRatingCalculator::applyRowRatings($commitment, $row, $data['action'] !== 'approve');
+                $commitment->refresh();
 
-                    $commitment->update([
-                        'rating_q3_target' => $q3Target,
-                        'rating_q3_actual' => $q3Actual,
-                        'rating_q4_target' => $q4Target,
-                        'rating_q4_actual' => $q4Actual,
-                        'rating_target_total' => $totals['target_total'],
-                        'rating_actual_total' => $totals['actual_total'],
-                        'rating_percent' => $totals['percent'],
-                        'rating_quality' => $scored['quality'],
-                        'rating_efficiency' => $scored['efficiency'],
-                        'rating_timeliness' => $scored['timeliness'],
-                        'rating_average' => $scored['average'],
-                        'rating_weighted' => $scored['weighted'],
-                        'remarks' => null,
-                        'status' => CommitmentStatus::Approved,
-                    ]);
-
-                    $sumWeighted += $scored['weighted'] ?? 0.0;
+                if ($commitment->rating_weighted !== null) {
+                    $sumWeighted += (float) $commitment->rating_weighted;
                     $hasWeighted = true;
                 }
+            }
+
+            if ($data['action'] === 'approve') {
+                $submission->commitments()->update([
+                    'status' => CommitmentStatus::Approved,
+                ]);
 
                 $submission->update([
                     'quality' => null,
@@ -252,19 +214,6 @@ class SubmissionReviewController extends Controller
             } elseif ($data['action'] === 'return') {
                 $submission->commitments()->update([
                     'status' => CommitmentStatus::Returned,
-                    'rating_actual_total' => null,
-                    'rating_target_total' => null,
-                    'rating_q3_target' => null,
-                    'rating_q3_actual' => null,
-                    'rating_q4_target' => null,
-                    'rating_q4_actual' => null,
-                    'rating_percent' => null,
-                    'rating_quality' => null,
-                    'rating_efficiency' => null,
-                    'rating_timeliness' => null,
-                    'rating_average' => null,
-                    'rating_weighted' => null,
-                    'remarks' => null,
                 ]);
 
                 $submission->update([

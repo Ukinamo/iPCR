@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
@@ -64,6 +65,16 @@ class User extends Authenticatable
     public function ipcrSubmissionsAsSupervisor(): HasMany
     {
         return $this->hasMany(IpcrSubmission::class, 'supervisor_id');
+    }
+
+    public function assignedIpcrFormTemplates(): BelongsToMany
+    {
+        return $this->belongsToMany(
+            IpcrFormTemplate::class,
+            'ipcr_form_template_supervisors',
+            'supervisor_id',
+            'ipcr_form_template_id',
+        )->withTimestamps()->withPivot('assigned_at');
     }
 
     public function isEmployee(): bool

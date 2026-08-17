@@ -200,7 +200,9 @@ final class IpcrFormViewDataBuilder
             'weighted' => self::weightedRemarkScore($c) !== null
                 ? number_format(self::weightedRemarkScore($c), 2)
                 : null,
-            'remarks' => null,
+            'remarks' => self::weightedRemarkScore($c) !== null
+                ? number_format(self::weightedRemarkScore($c), 2)
+                : null,
         ];
     }
 

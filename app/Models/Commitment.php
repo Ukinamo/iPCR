@@ -12,6 +12,8 @@ class Commitment extends Model
     protected $fillable = [
         'user_id',
         'batch_id',
+        'ipcr_form_template_id',
+        'ipcr_form_template_item_id',
         'ipcr_submission_id',
         'evaluation_year',
         'evaluation_quarter',
@@ -66,11 +68,29 @@ class Commitment extends Model
         return $this->belongsTo(IpcrSubmission::class, 'ipcr_submission_id');
     }
 
+    public function formTemplate(): BelongsTo
+    {
+        return $this->belongsTo(IpcrFormTemplate::class, 'ipcr_form_template_id');
+    }
+
+    public function formTemplateItem(): BelongsTo
+    {
+        return $this->belongsTo(IpcrFormTemplateItem::class, 'ipcr_form_template_item_id');
+    }
+
     /**
      * Evidence of work (files, photos, documents) supporting this commitment.
      */
     public function accomplishments(): HasMany
     {
         return $this->hasMany(Accomplishment::class)->orderByDesc('id');
+    }
+
+    public function scopeInFormOrder($query)
+    {
+        return $query
+            ->orderByRaw("CASE WHEN function_type = 'core' THEN 0 ELSE 1 END")
+            ->orderByRaw('COALESCE((SELECT sort_order FROM ipcr_form_template_items WHERE ipcr_form_template_items.id = commitments.ipcr_form_template_item_id), 9999)')
+            ->orderBy('id');
     }
 }

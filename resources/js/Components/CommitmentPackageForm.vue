@@ -34,6 +34,14 @@ const props = defineProps({
         type: String,
         default: 'Save commitments',
     },
+    intro: {
+        type: String,
+        default: 'Fill in commitments like the IPCR form. Use + Add row under a Function for each Services/Indicator that has its own Weight, Annual Office Target, and Individual Annual Targets.',
+    },
+    showCancel: {
+        type: Boolean,
+        default: true,
+    },
 });
 
 defineEmits(['submit', 'cancel']);
@@ -121,9 +129,8 @@ function removeFunctionEntry(eIdx) {
 
 <template>
     <div class="space-y-6">
-        <p class="text-xs text-slate-500">
-            Fill in your commitments like the IPCR form. Use <strong>+ Add row</strong> under a Function for each
-            Services/Indicator that has its own Weight, Annual Office Target, and Individual Annual Targets.
+        <p v-if="intro" class="text-xs text-slate-500">
+            {{ intro }}
         </p>
 
         <div class="overflow-x-auto rounded-lg border border-slate-300">
@@ -397,7 +404,7 @@ function removeFunctionEntry(eIdx) {
             <PrimaryButton type="button" class="w-full justify-center sm:w-auto" :disabled="processing" @click="$emit('submit')">
                 {{ processing ? 'Saving…' : submitLabel }}
             </PrimaryButton>
-            <SecondaryButton type="button" class="w-full justify-center sm:w-auto" :disabled="processing" @click="$emit('cancel')">
+            <SecondaryButton v-if="showCancel" type="button" class="w-full justify-center sm:w-auto" :disabled="processing" @click="$emit('cancel')">
                 Cancel
             </SecondaryButton>
         </div>

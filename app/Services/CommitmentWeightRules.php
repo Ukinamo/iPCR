@@ -57,6 +57,33 @@ final class CommitmentWeightRules
     }
 
     /**
+     * @param  iterable<int, object|array<string, mixed>>  $rows
+     * @return array{core: float, strategic: float, total: float}
+     */
+    public static function totalsFromRows(iterable $rows): array
+    {
+        $core = 0.0;
+        $strategic = 0.0;
+
+        foreach ($rows as $row) {
+            $type = is_array($row) ? ($row['function_type'] ?? null) : ($row->function_type ?? null);
+            $weight = (float) (is_array($row) ? ($row['weight'] ?? 0) : ($row->weight ?? 0));
+
+            if ($type === 'core') {
+                $core += $weight;
+            } elseif ($type === 'strategic') {
+                $strategic += $weight;
+            }
+        }
+
+        return [
+            'core' => round($core, 2),
+            'strategic' => round($strategic, 2),
+            'total' => round($core + $strategic, 2),
+        ];
+    }
+
+    /**
      * @return array{core: float, strategic: float, total: float, core_remaining: float, strategic_remaining: float}
      */
     public static function summaryForEmployee(int $userId, int $year, int $quarter): array

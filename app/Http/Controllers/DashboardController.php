@@ -12,10 +12,11 @@ use App\Models\IpcrSubmission;
 use App\Models\SubmissionReviewTransferRequest;
 use App\Models\SupervisorTransferRequest;
 use App\Models\User;
+use App\Http\Controllers\Admin\FormTemplateController;
 use App\Http\Controllers\Admin\ReportController;
 use App\Services\AdminAnalyticsService;
-use App\Services\CommitmentPeriodGuard;
 use App\Services\CommitmentWeightRules;
+use App\Services\IpcrFormTemplateProvisioner;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -39,12 +40,14 @@ class DashboardController extends Controller
         $year = (int) now()->year;
         $quarter = (int) ceil(now()->month / 3);
 
+        app(IpcrFormTemplateProvisioner::class)->provisionAssignedForEmployee($user);
+
         $commitments = Commitment::query()
             ->where('user_id', $user->id)
             ->where('evaluation_year', $year)
             ->where('evaluation_quarter', $quarter)
             ->with('accomplishments')
-            ->orderByDesc('id')
+            ->inFormOrder()
             ->get();
         $approvedHistory = IpcrSubmission::query()
             ->where('employee_id', $user->id)
@@ -55,12 +58,30 @@ class DashboardController extends Controller
             ->take(20)
             ->get();
 
-        $activeCommitments = $commitments->whereIn('status', [CommitmentStatus::Draft, CommitmentStatus::InReview])->count();
-        $pendingReview = $commitments->where('status', CommitmentStatus::InReview)->count();
-        $approved = $commitments->where('status', CommitmentStatus::Approved)->count();
-        $approvalRate = $commitments->isEmpty()
+        $packageStatuses = Commitment::query()
+            ->where('user_id', $user->id)
+            ->get(['evaluation_year', 'evaluation_quarter', 'status'])
+            ->groupBy(fn (Commitment $c) => $c->evaluation_year.'-'.$c->evaluation_quarter)
+            ->map(function ($rows) {
+                if ($rows->contains(fn (Commitment $c) => $c->status === CommitmentStatus::InReview)) {
+                    return 'in_review';
+                }
+                if ($rows->contains(fn (Commitment $c) => $c->status === CommitmentStatus::Approved)) {
+                    return 'approved';
+                }
+                if ($rows->contains(fn (Commitment $c) => $c->status === CommitmentStatus::Returned)) {
+                    return 'returned';
+                }
+
+                return 'draft';
+            });
+
+        $activeCommitments = $packageStatuses->filter(fn ($status) => in_array($status, ['draft', 'returned'], true))->count();
+        $pendingReview = $packageStatuses->filter(fn ($status) => $status === 'in_review')->count();
+        $approved = $packageStatuses->filter(fn ($status) => $status === 'approved')->count();
+        $approvalRate = $packageStatuses->isEmpty()
             ? 0
-            : (int) round(($approved / max($commitments->count(), 1)) * 100);
+            : (int) round(($approved / $packageStatuses->count()) * 100);
 
         $submission = IpcrSubmission::query()
             ->with('commitments')
@@ -71,21 +92,34 @@ class DashboardController extends Controller
 
         $weightSummary = CommitmentWeightRules::summaryForEmployee($user->id, $year, $quarter);
 
+        $hasAssignedForm = $commitments->isNotEmpty();
+        $hasAccomplishments = $commitments->contains(function ($c) {
+            return $c->rating_q3_actual !== null
+                || $c->rating_q4_actual !== null
+                || $c->rating_actual_total !== null;
+        });
         $hasDraftOrReturned = $commitments->contains(fn ($c) => in_array($c->status, [CommitmentStatus::Draft, CommitmentStatus::Returned], true));
         $submissionAllowsSubmit = ! $submission || $submission->status === SubmissionStatus::Returned;
         $canSubmitPeriod = $hasDraftOrReturned
+            && $hasAssignedForm
+            && $hasAccomplishments
             && $submissionAllowsSubmit
             && $weightSummary['meets_submit_requirement']
             && $user->supervisor_id !== null;
 
         $packageLocked = $submission && in_array($submission->status, [SubmissionStatus::InReview, SubmissionStatus::Approved], true);
-        $addCommitmentBlockedReason = CommitmentPeriodGuard::addCommitmentBlockedReason($user, $year, $quarter);
-        $canAddCommitment = $addCommitmentBlockedReason === null;
+        $canAnswerForm = $hasAssignedForm && $hasDraftOrReturned && ! $packageLocked;
+        $addCommitmentBlockedReason = $hasAssignedForm
+            ? null
+            : ($user->supervisor_id === null
+                ? 'Ask your administrator to assign a supervisor, then they will assign an IPCR form for you to complete.'
+                : 'Waiting for an administrator to create the IPCR form and assign it to your supervisor.');
         $submitSteps = $submission && $submission->status === SubmissionStatus::Approved
             ? []
             : $this->submitStepsForEmployee(
                 $user,
-                $hasDraftOrReturned,
+                $hasAssignedForm,
+                $hasAccomplishments,
                 $packageLocked,
                 $weightSummary,
                 $submissionAllowsSubmit,
@@ -108,7 +142,8 @@ class DashboardController extends Controller
             'submission' => $submission,
             'weightSummary' => $weightSummary,
             'canSubmitPeriod' => $canSubmitPeriod,
-            'canAddCommitment' => $canAddCommitment,
+            'canAnswerForm' => $canAnswerForm,
+            'hasAssignedForm' => $hasAssignedForm,
             'addCommitmentBlockedReason' => $addCommitmentBlockedReason,
             'submitSteps' => $submitSteps,
             'reminder' => 'The Q'.$quarter.' '.$year.' evaluation period closes on the last day of the quarter. Submit accomplishments and supporting documents before the deadline.',
@@ -122,18 +157,16 @@ class DashboardController extends Controller
      */
     private function submitStepsForEmployee(
         User $user,
-        bool $hasDraftOrReturned,
+        bool $hasAssignedForm,
+        bool $hasAccomplishments,
         bool $packageLocked,
         array $weightSummary,
         bool $submissionAllowsSubmit,
         ?IpcrSubmission $submission,
     ): array {
         $supervisorOk = $user->supervisor_id !== null;
-
-        $commitmentsStepDone = $hasDraftOrReturned || $packageLocked;
-
-        $weightsOk = $weightSummary['meets_submit_requirement'] || $packageLocked;
-
+        $formStepDone = $hasAssignedForm || $packageLocked;
+        $answersDone = ($hasAccomplishments && $weightSummary['meets_submit_requirement']) || $packageLocked;
         $packageStepDone = $submissionAllowsSubmit;
 
         $packageDetail = null;
@@ -149,30 +182,24 @@ class DashboardController extends Controller
                 'title' => 'Be linked to a supervisor',
                 'detail' => $supervisorOk
                     ? null
-                    : 'Ask your administrator to assign a supervisor to your account (User Management). You cannot submit without this.',
+                    : 'Ask your administrator to assign a supervisor to your account (User Management). You cannot receive a form without this.',
                 'done' => $supervisorOk,
             ],
             [
-                'key' => 'commitments',
-                'title' => 'Add commitments for this quarter',
-                'detail' => $commitmentsStepDone
-                    ? ($packageLocked ? 'Your targets are in the system for this period.' : null)
-                    : 'Create at least one commitment in Draft (or edit commitments your supervisor returned).',
-                'done' => $commitmentsStepDone,
+                'key' => 'form',
+                'title' => 'Wait for the assigned IPCR form',
+                'detail' => $formStepDone
+                    ? 'Your administrator assigned the form your team will use for this period.'
+                    : 'An administrator must create the IPCR form (Function, Indicators, Weight, Targets) and assign it to your supervisor.',
+                'done' => $formStepDone,
             ],
             [
-                'key' => 'weights',
-                'title' => 'Set weights to '.CommitmentWeightRules::CORE_CAP.'% core and '.CommitmentWeightRules::STRATEGIC_CAP.'% strategic',
-                'detail' => $weightsOk
-                    ? ($packageLocked ? 'Weights were valid when your package was sent.' : null)
-                    : sprintf(
-                        'Across all Draft and Returned commitments, core must total %.0f%% and strategic %.0f%% (currently %.2f%% / %.2f%%). Edit weights or add rows until it matches.',
-                        CommitmentWeightRules::CORE_CAP,
-                        CommitmentWeightRules::STRATEGIC_CAP,
-                        $weightSummary['core'],
-                        $weightSummary['strategic'],
-                    ),
-                'done' => $weightsOk,
+                'key' => 'answers',
+                'title' => 'Fill accomplishments (rating, average, and remarks auto-compute)',
+                'detail' => $answersDone
+                    ? ($packageLocked ? 'Your answers are in the system for this period.' : null)
+                    : 'Enter accomplishments on the form. Rating, average, and remarks (weight × average) compute automatically.',
+                'done' => $answersDone,
             ],
             [
                 'key' => 'submit',
@@ -265,6 +292,7 @@ class DashboardController extends Controller
         return Inertia::render('Admin/Dashboard', [
             'stats' => $stats,
             'users' => $users,
+            ...app(FormTemplateController::class)->dashboardProps(),
             'approvedRatings' => app(ReportController::class)->approvedSubmissionsList(),
             'reviewMonths' => app(ReportController::class)->approvedReviewMonths(),
             'analytics' => app(AdminAnalyticsService::class)->snapshot(),

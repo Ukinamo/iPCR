@@ -1,5 +1,6 @@
 <script setup>
 import AdminAnalyticsPanel from '@/Components/AdminAnalyticsPanel.vue';
+import AdminIpcrFormsPanel from '@/Components/AdminIpcrFormsPanel.vue';
 import AdminTransferRequestsPanel from '@/Components/AdminTransferRequestsPanel.vue';
 import AppIcon from '@/Components/AppIcon.vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
@@ -35,15 +36,28 @@ defineProps({
         type: Array,
         default: () => [],
     },
+    formTemplates: {
+        type: Array,
+        default: () => [],
+    },
+    formPeriod: {
+        type: Object,
+        default: () => ({}),
+    },
+    formWeightSummary: {
+        type: Object,
+        default: () => ({}),
+    },
 });
 
 const tab = ref('users');
 
 onMounted(() => {
     const params = new URLSearchParams(window.location.search);
+    const requestedTab = params.get('tab');
 
-    if (params.get('tab') === 'transfers') {
-        tab.value = 'transfers';
+    if (['users', 'forms', 'reports', 'analytics', 'transfers'].includes(requestedTab)) {
+        tab.value = requestedTab;
     }
 });
 
@@ -57,6 +71,7 @@ const statCards = [
 
 const tabs = [
     { id: 'users', label: 'User Management', icon: 'users' },
+    { id: 'forms', label: 'IPCR Forms', icon: 'clipboard' },
     { id: 'reports', label: 'Reports', icon: 'document-chart-bar' },
     { id: 'analytics', label: 'Analytics', icon: 'chart-bar' },
     { id: 'transfers', label: 'Transfer Requests', icon: 'users' },
@@ -155,7 +170,7 @@ function destroyUser(id) {
                         @click="tab = item.id"
                     >
                         <AppIcon :name="item.icon" class="h-4 w-4 shrink-0" />
-                        <span class="sm:hidden">{{ item.id === 'users' ? 'Users' : item.id === 'reports' ? 'Reports' : item.id === 'analytics' ? 'Analytics' : 'Transfers' }}</span>
+                        <span class="sm:hidden">{{ item.id === 'users' ? 'Users' : item.id === 'forms' ? 'Forms' : item.id === 'reports' ? 'Reports' : item.id === 'analytics' ? 'Analytics' : 'Transfers' }}</span>
                         <span class="hidden sm:inline">{{ item.label }}</span>
                         <span
                             v-if="item.id === 'transfers' && pendingTransferCount > 0"
@@ -237,6 +252,14 @@ function destroyUser(id) {
                             </tbody>
                         </table>
                     </div>
+                </div>
+
+                <div v-show="tab === 'forms'">
+                    <AdminIpcrFormsPanel
+                        :templates="formTemplates"
+                        :period="formPeriod"
+                        :weight-summary="formWeightSummary"
+                    />
                 </div>
 
                 <div v-show="tab === 'reports'" class="space-y-6">

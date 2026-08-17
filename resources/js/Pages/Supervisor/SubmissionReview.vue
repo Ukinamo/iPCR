@@ -58,6 +58,7 @@ function mapCommitmentToRow(c) {
         rating_q3_actual: c.rating_q3_actual ?? '',
         rating_q4_target: c.rating_q4_target ?? '',
         rating_q4_actual: c.rating_q4_actual ?? '',
+        remarks: c.remarks ?? '',
     };
 }
 
@@ -271,6 +272,7 @@ function addItemRow(group) {
         rating_q3_actual: '',
         rating_q4_target: '',
         rating_q4_actual: '',
+        remarks: '',
     });
 }
 
@@ -298,6 +300,7 @@ function addFunctionEntry(type) {
         rating_q3_actual: '',
         rating_q4_target: '',
         rating_q4_actual: '',
+        remarks: '',
     });
 }
 
@@ -437,6 +440,7 @@ function mergeCommitmentsFromProps(previousRows) {
             rating_q3_actual: previous.rating_q3_actual,
             rating_q4_target: previous.rating_q4_target,
             rating_q4_actual: previous.rating_q4_actual,
+            remarks: previous.remarks,
         };
     });
 }
@@ -594,8 +598,8 @@ function badge(status) {
                                         Use <strong>+ Add row</strong> / <strong>+ Add function</strong>, then <strong>Save</strong> or <strong>Cancel</strong>.
                                     </template>
                                     <template v-else-if="isEditable">
-                                        Rate accomplishments below. Click <strong>Edit</strong> to change Function, Services/Indicators, Weight, or Annual Targets.
-                                        Q, E, and T default from the accomplishment ratio. Average = (Q + E + T) ÷ 3.
+                                        Rate or edit the whole form. Accomplishments can be changed; Q, E, and T default from the accomplishment ratio.
+                                        Average = (Q + E + T) ÷ 3. Remarks = Weight% × Average.
                                     </template>
                                     <template v-else-if="isApproved">
                                         This submission has been approved. Ratings shown below are read-only.

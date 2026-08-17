@@ -39,7 +39,18 @@ class SubmissionController extends Controller
             ->get();
 
         if ($commitments->isEmpty()) {
-            return back()->withErrors(['evaluation_quarter' => 'Add at least one commitment for this period before submitting.']);
+            return back()->withErrors(['evaluation_quarter' => 'No IPCR form has been assigned for this period yet. Ask your administrator to create the form and assign it to your supervisor.']);
+        }
+
+        $hasAccomplishments = $commitments->contains(function ($c) {
+            return $c->weight === null
+                || $c->rating_q3_actual !== null
+                || $c->rating_q4_actual !== null
+                || $c->rating_actual_total !== null;
+        });
+
+        if (! $hasAccomplishments) {
+            return back()->withErrors(['evaluation_quarter' => 'Fill in your accomplishments on the assigned form before submitting.']);
         }
 
         $totals = CommitmentWeightRules::totalsForSubmissionBatch($commitments);

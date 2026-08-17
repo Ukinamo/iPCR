@@ -47,6 +47,6 @@ class IpcrSubmission extends Model
 
     public function commitments(): HasMany
     {
-        return $this->hasMany(Commitment::class, 'ipcr_submission_id');
+        return $this->hasMany(Commitment::class, 'ipcr_submission_id')->inFormOrder();
     }
 }

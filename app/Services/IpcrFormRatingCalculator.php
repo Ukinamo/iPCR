@@ -149,6 +149,94 @@ final class IpcrFormRatingCalculator
         ];
     }
 
+    /**
+     * Persist accomplishment numbers and auto-computed (or provided) ratings onto a commitment.
+     *
+     * @param  array<string, mixed>  $row
+     */
+    public static function applyRowRatings(\App\Models\Commitment $commitment, array $row, bool $autoRatings = true): void
+    {
+        $q3Target = self::nullableWholeNumber($row['rating_q3_target'] ?? null);
+        $q3Actual = self::nullableWholeNumber($row['rating_q3_actual'] ?? null);
+        $q4Target = self::nullableWholeNumber($row['rating_q4_target'] ?? null);
+        $q4Actual = self::nullableWholeNumber($row['rating_q4_actual'] ?? null);
+
+        $totals = self::totalsFromQ3Q4($q3Target, $q3Actual, $q4Target, $q4Actual);
+        $weight = $commitment->weight !== null ? (float) $commitment->weight : null;
+
+        $payload = [
+            'rating_q3_target' => $q3Target,
+            'rating_q3_actual' => $q3Actual,
+            'rating_q4_target' => $q4Target,
+            'rating_q4_actual' => $q4Actual,
+            'rating_target_total' => $totals['target_total'],
+            'rating_actual_total' => $totals['actual_total'],
+            'rating_percent' => $totals['percent'],
+            'remarks' => null,
+        ];
+
+        if ($weight === null) {
+            $commitment->update([
+                ...$payload,
+                'rating_quality' => null,
+                'rating_efficiency' => null,
+                'rating_timeliness' => null,
+                'rating_average' => null,
+                'rating_weighted' => null,
+            ]);
+
+            return;
+        }
+
+        $quality = isset($row['rating_quality']) && is_numeric($row['rating_quality'])
+            ? (int) $row['rating_quality']
+            : null;
+        $efficiency = isset($row['rating_efficiency']) && is_numeric($row['rating_efficiency'])
+            ? (int) $row['rating_efficiency']
+            : null;
+        $timeliness = isset($row['rating_timeliness']) && is_numeric($row['rating_timeliness'])
+            ? (int) $row['rating_timeliness']
+            : null;
+
+        if ($autoRatings || $quality === null || $efficiency === null || $timeliness === null) {
+            $ratio = $totals['percent'] ?? 0.0;
+            $suggested = $totals['percent'] !== null
+                ? self::qualityFromAccomplishmentRatio($ratio)
+                : null;
+
+            $quality = $quality ?? $suggested;
+            $efficiency = $efficiency ?? $suggested;
+            $timeliness = $timeliness ?? $suggested;
+        }
+
+        if ($quality === null || $efficiency === null || $timeliness === null) {
+            $commitment->update([
+                ...$payload,
+                'rating_quality' => null,
+                'rating_efficiency' => null,
+                'rating_timeliness' => null,
+                'rating_average' => null,
+                'rating_weighted' => null,
+            ]);
+
+            return;
+        }
+
+        $scored = self::scoreRowFromRatings($quality, $efficiency, $timeliness, $weight);
+
+        $commitment->update([
+            ...$payload,
+            'rating_quality' => $scored['quality'],
+            'rating_efficiency' => $scored['efficiency'],
+            'rating_timeliness' => $scored['timeliness'],
+            'rating_average' => $scored['average'],
+            'rating_weighted' => $scored['weighted'],
+            'remarks' => $scored['weighted'] !== null
+                ? number_format((float) $scored['weighted'], 2, '.', '')
+                : null,
+        ]);
+    }
+
     public static function weightedFromAverageAndWeight(float $average, ?float $weightPercent): ?float
     {
         if ($weightPercent === null) {

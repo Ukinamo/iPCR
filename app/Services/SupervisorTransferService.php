@@ -13,7 +13,6 @@ use App\Notifications\IpcrSubmittedForReviewNotification;
 use App\Notifications\TransferRequestApprovedNotification;
 use App\Notifications\TransferRequestRejectedNotification;
 use App\Notifications\TransferRequestSubmittedNotification;
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -109,6 +108,10 @@ class SupervisorTransferService
                 'admin_notes' => $adminNotes,
             ]);
         });
+
+        app(IpcrFormTemplateProvisioner::class)->provisionAssignedForEmployee(
+            $transferRequest->employee()->firstOrFail()
+        );
 
         $transferRequest->load(['employee', 'requestedBy', 'fromSupervisor', 'toSupervisor', 'reviewedBy']);
 

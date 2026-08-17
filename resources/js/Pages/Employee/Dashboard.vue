@@ -1,12 +1,12 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import AppIcon from '@/Components/AppIcon.vue';
-import CommitmentIpcrTable from '@/Components/CommitmentIpcrTable.vue';
-import CommitmentPackageForm from '@/Components/CommitmentPackageForm.vue';
+import IpcrEmployeeAnswerTable from '@/Components/IpcrEmployeeAnswerTable.vue';
 import IpcrPreviewLink from '@/Components/IpcrPreviewLink.vue';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
 import SecondaryButton from '@/Components/SecondaryButton.vue';
 import { formatDecimal, formatWholeNumber } from '@/utils/numberFormat';
+import { suggestedRating } from '@/utils/ipcrRating';
 import { statusLabel } from '@/utils/statusLabels';
 import { Head, useForm, router } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
@@ -19,9 +19,13 @@ const props = defineProps({
     submission: Object,
     weightSummary: Object,
     canSubmitPeriod: Boolean,
-    canAddCommitment: {
+    canAnswerForm: {
         type: Boolean,
-        default: true,
+        default: false,
+    },
+    hasAssignedForm: {
+        type: Boolean,
+        default: false,
     },
     addCommitmentBlockedReason: {
         type: String,
@@ -38,7 +42,6 @@ const props = defineProps({
 const firstBlockingSubmitStep = computed(() => props.submitSteps?.find((s) => !s.done) ?? null);
 
 const tab = ref('commitments');
-const showCreateCommitmentPanel = ref(false);
 
 const statCards = [
     { key: 'activeCommitments', label: 'Active Commitments', icon: 'clipboard', tone: 'bg-sky-100 text-sky-700' },
@@ -47,206 +50,70 @@ const statCards = [
 ];
 
 const tabs = [
-    { id: 'commitments', label: 'My Commitments', icon: 'clipboard' },
+    { id: 'commitments', label: 'My IPCR form', icon: 'clipboard' },
     { id: 'history', label: 'Commitment history', icon: 'star' },
 ];
 
-const commitmentForm = useForm({
+function mapAnswerRow(c) {
+    const suggested = suggestedRating(
+        c.rating_q3_target ?? '',
+        c.rating_q3_actual ?? '',
+        c.rating_q4_target ?? '',
+        c.rating_q4_actual ?? '',
+    );
+
+    return {
+        id: c.id,
+        function_type: c.function_type === 'strategic' ? 'strategic' : 'core',
+        title: c.title ?? '',
+        description: c.description ?? '',
+        weight: c.weight ?? null,
+        annual_office_target: c.annual_office_target ?? '',
+        individual_annual_targets: c.individual_annual_targets ?? '',
+        rating_q3_target: c.rating_q3_target ?? '',
+        rating_q3_actual: c.rating_q3_actual ?? '',
+        rating_q4_target: c.rating_q4_target ?? '',
+        rating_q4_actual: c.rating_q4_actual ?? '',
+        rating_quality: c.rating_quality ?? suggested,
+        rating_efficiency: c.rating_efficiency ?? suggested,
+        rating_timeliness: c.rating_timeliness ?? suggested,
+    };
+}
+
+const answerForm = useForm({
     evaluation_year: props.period.year,
     evaluation_quarter: props.period.quarter,
-    period_label: props.period.label,
-    entries: [],
-    evidence: {
-        title: '',
-        description: '',
-        files: [],
-    },
+    commitments: (props.commitments || []).map(mapAnswerRow),
 });
 
-let itemSeq = 0;
-
-function newItem(weight = null) {
-    itemSeq += 1;
-    return {
-        _uid: itemSeq,
-        description: '',
-        weight,
-        annual_office_target: '',
-        individual_annual_targets: '',
-    };
-}
-
-function newEntry(functionType, defaultWeight) {
-    return {
-        enabled: true,
-        function_type: functionType,
-        title: '',
-        items: [newItem(defaultWeight)],
-    };
-}
-
-const groupedCommitments = computed(() => {
-    const groups = new Map();
-    const statusRank = { draft: 0, returned: 1, in_review: 2, approved: 3 };
-
-    for (const c of props.commitments || []) {
-        const key = packageGroupKey(c);
-        if (!groups.has(key)) {
-            groups.set(key, {
-                key,
-                first_id: c.id,
-                batch_id: c.batch_id,
-                ipcr_submission_id: c.ipcr_submission_id,
-                period_label: c.period_label,
-                status: c.status,
-                items: [],
-                functionMap: new Map(),
-                total_weight: 0,
-                total_evidence: 0,
-                created_at: c.created_at,
-                has_core: false,
-                has_strategic: false,
-            });
-        }
-        const g = groups.get(key);
-        if (!g.first_id || c.id < g.first_id) {
-            g.first_id = c.id;
-        }
-        g.items.push(c);
-        g.total_weight += Number(c.weight || 0);
-        g.total_evidence += (c.accomplishments?.length || 0);
-        if (c.function_type === 'core') {
-            g.has_core = true;
-        }
-        if (c.function_type === 'strategic') {
-            g.has_strategic = true;
-        }
-        if ((statusRank[c.status] ?? -1) < (statusRank[g.status] ?? -1)) {
-            g.status = c.status;
-        }
-        if (!g.created_at || (c.created_at && c.created_at < g.created_at)) {
-            g.created_at = c.created_at;
-        }
-        const fnKey = `${c.function_type}|${c.title}`;
-        if (!g.functionMap.has(fnKey)) {
-            g.functionMap.set(fnKey, { function_type: c.function_type, title: c.title, count: 0 });
-        }
-        g.functionMap.get(fnKey).count += 1;
-    }
-
-    return Array.from(groups.values()).map((g) => ({
-        ...g,
-        functions: Array.from(g.functionMap.values()),
-    }));
-});
-
-function packageGroupKey(c) {
-    if (c.batch_id) {
-        return `batch:${c.batch_id}`;
-    }
-
-    if (c.ipcr_submission_id) {
-        return `submission:${c.ipcr_submission_id}`;
-    }
-
-    return `solo:${c.id}`;
-}
-
-function packageCardTitle(group) {
-    if (group.status === 'returned') {
-        return 'Returned IPCR package';
-    }
-
-    if (group.has_core && group.has_strategic) {
-        return 'IPCR package (Core + Strategic)';
-    }
-
-    return 'Commitment package';
-}
-
-function packageIsEditable(status) {
-    return status === 'draft' || status === 'returned';
-}
-
-function formatBatchDate(iso) {
-    if (!iso) return '';
-    try {
-        return new Date(iso).toLocaleString(undefined, {
-            year: 'numeric',
-            month: 'short',
-            day: 'numeric',
-            hour: 'numeric',
-            minute: '2-digit',
-        });
-    } catch {
-        return '';
-    }
-}
-
-function openCreateCommitmentPanel() {
-    if (!props.canAddCommitment) {
-        return;
-    }
-    showCreateCommitmentPanel.value = true;
-    tab.value = 'commitments';
-    if (!commitmentForm.entries.length) {
-        resetCommitmentCreateForm();
-    }
-}
-
-function closeCreateCommitmentPanel() {
-    showCreateCommitmentPanel.value = false;
-    resetCommitmentCreateForm();
-}
-
-function resetCommitmentCreateForm() {
-    commitmentForm.reset();
-    commitmentForm.evaluation_year = props.period.year;
-    commitmentForm.evaluation_quarter = props.period.quarter;
-    commitmentForm.period_label = props.period.label;
-    commitmentForm.evidence = { title: '', description: '', files: [] };
-    commitmentForm.entries = [
-        newEntry('core', 0),
-        newEntry('strategic', 0),
-    ];
-}
-
-function submitNewCommitment() {
-    const payload = commitmentForm.entries
-        .filter((e) => e.enabled)
-        .flatMap((e) =>
-            (e.items || []).map((it) => ({
-                function_type: e.function_type,
-                title: e.title,
-                description: it.description,
-                weight: it.weight === '' || it.weight == null ? null : it.weight,
-                annual_office_target: it.annual_office_target,
-                individual_annual_targets: it.individual_annual_targets,
-            })),
-        );
-
-    if (!payload.length) {
-        return;
-    }
-
-    commitmentForm.transform((data) => ({
+function saveAnswers() {
+    answerForm.transform((data) => ({
         evaluation_year: data.evaluation_year,
         evaluation_quarter: data.evaluation_quarter,
-        period_label: data.period_label,
-        entries: payload,
-        evidence_title: data.evidence?.title ?? '',
-        evidence_description: data.evidence?.description ?? '',
-        evidence_files: data.evidence?.files ?? [],
-    }));
-
-    commitmentForm.post(route('employee.commitments.store'), {
-        forceFormData: true,
+        commitments: data.commitments.map((row) => ({
+            id: row.id,
+            rating_q3_target: row.rating_q3_target === '' ? null : row.rating_q3_target,
+            rating_q3_actual: row.rating_q3_actual === '' ? null : row.rating_q3_actual,
+            rating_q4_target: row.rating_q4_target === '' ? null : row.rating_q4_target,
+            rating_q4_actual: row.rating_q4_actual === '' ? null : row.rating_q4_actual,
+        })),
+    })).patch(route('employee.form-answers.update'), {
         preserveScroll: true,
-        onSuccess: () => {
-            showCreateCommitmentPanel.value = false;
-            resetCommitmentCreateForm();
-        },
+        onFinish: () => answerForm.transform((data) => data),
     });
+}
+
+function cancelAnswers() {
+    answerForm.commitments = (props.commitments || []).map(mapAnswerRow);
+    answerForm.clearErrors();
+}
+
+function openFormView() {
+    const first = props.commitments?.[0];
+    if (!first?.id) {
+        return;
+    }
+    router.visit(route('employee.commitments.show', first.id));
 }
 
 const submitPeriodForm = useForm({
@@ -331,13 +198,13 @@ function formatWeighted(c) {
                 </span>
                 <div>
                     <h2 class="text-xl font-semibold leading-tight text-gray-800">Employee Dashboard</h2>
-                    <p class="text-sm text-gray-500">Track your IPCR commitments and manage your performance evaluation.</p>
+                    <p class="text-sm text-gray-500">Complete the assigned IPCR form and submit it for supervisor review.</p>
                 </div>
             </div>
         </template>
 
         <div class="py-8">
-            <div class="mx-auto max-w-6xl space-y-6 px-4 sm:px-6 lg:px-8">
+            <div class="mx-auto max-w-7xl space-y-6 px-4 sm:px-6 lg:px-8">
                 <div class="grid gap-4 md:grid-cols-3">
                     <div
                         v-for="card in statCards"
@@ -389,7 +256,7 @@ function formatWeighted(c) {
                         <div>
                             <p class="font-semibold text-amber-900">Supervisor comments</p>
                             <p class="mt-2 whitespace-pre-wrap text-amber-950/90">{{ submission.supervisor_feedback }}</p>
-                            <p class="mt-2 text-xs text-amber-800">Update your commitments below, then submit again when ready.</p>
+                            <p class="mt-2 text-xs text-amber-800">Update accomplishments below, then submit again when ready.</p>
                         </div>
                     </div>
                     <div v-if="submission.status === 'approved' && submission.overall_rating" class="mt-4 flex items-start gap-3 text-sm text-slate-700">
@@ -410,10 +277,10 @@ function formatWeighted(c) {
                             <AppIcon name="chart-bar" class="h-5 w-5" />
                         </span>
                         <div class="min-w-0 flex-1">
-                            <p class="font-semibold text-indigo-900">SPMS weighting (this quarter, editable drafts)</p>
+                            <p class="font-semibold text-indigo-900">SPMS weighting (assigned form)</p>
                             <p class="mt-1 text-indigo-900/85">
-                                Targets must total <strong>{{ weightSummary.core_cap }}% core</strong> and
-                                <strong>{{ weightSummary.strategic_cap }}% strategic</strong> before you can submit for review.
+                                The administrator set this form to <strong>{{ weightSummary.core_cap }}% core</strong> and
+                                <strong>{{ weightSummary.strategic_cap }}% strategic</strong>. You fill accomplishments; rating, average, and remarks compute automatically.
                             </p>
                             <div class="mt-4 grid gap-4 md:grid-cols-2">
                                 <div>
@@ -512,8 +379,8 @@ function formatWeighted(c) {
                                 <AppIcon name="clipboard" class="h-5 w-5" />
                             </span>
                             <div>
-                                <h3 class="text-lg font-semibold text-slate-900">Performance Commitments</h3>
-                                <p class="text-sm text-slate-500">{{ period.label }} · align weights before submission</p>
+                                <h3 class="text-lg font-semibold text-slate-900">Assigned IPCR form</h3>
+                                <p class="text-sm text-slate-500">{{ period.label }} · fill accomplishments, then submit</p>
                                 <p v-if="!canSubmitPeriod && firstBlockingSubmitStep" class="mt-2 text-xs font-medium text-amber-800">
                                     Next: {{ firstBlockingSubmitStep.title }}
                                 </p>
@@ -540,165 +407,32 @@ function formatWeighted(c) {
                     </div>
 
                     <div
-                        v-if="!canAddCommitment && addCommitmentBlockedReason"
+                        v-if="!hasAssignedForm && addCommitmentBlockedReason"
                         class="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950"
                     >
                         <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-amber-100 text-amber-700">
                             <AppIcon name="exclamation-triangle" class="h-4 w-4" />
                         </span>
                         <div>
-                            <p class="font-semibold text-amber-900">Adding commitments is paused</p>
+                            <p class="font-semibold text-amber-900">No IPCR form assigned yet</p>
                             <p class="mt-1 text-amber-900/90">{{ addCommitmentBlockedReason }}</p>
                         </div>
                     </div>
 
-                    <div class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                        <div class="flex items-center gap-3">
-                            <span class="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
-                                <AppIcon name="plus" class="h-4 w-4" />
-                            </span>
-                            <div>
-                                <h4 class="text-sm font-semibold text-slate-900">Commitments</h4>
-                                <p class="mt-0.5 text-xs text-slate-500">
-                                    <template v-if="canAddCommitment">Add a target and optional proof in one step.</template>
-                                    <template v-else>Unavailable while your package is under review or this quarter is approved.</template>
-                                </p>
-                            </div>
-                        </div>
-                        <PrimaryButton
-                            v-if="canAddCommitment"
-                            type="button"
-                            class="shrink-0"
-                            @click="openCreateCommitmentPanel"
-                        >
-                            <span class="inline-flex items-center gap-1.5">
-                                <AppIcon name="plus" class="h-4 w-4" />
-                                Add commitment
-                            </span>
-                        </PrimaryButton>
-                        <SecondaryButton
-                            v-else
-                            type="button"
-                            class="shrink-0 cursor-not-allowed opacity-60"
-                            disabled
-                        >
-                            <span class="inline-flex items-center gap-1.5">
-                                <AppIcon name="plus" class="h-4 w-4" />
-                                Add commitment
-                            </span>
-                        </SecondaryButton>
-                    </div>
-
                     <div
-                        v-if="showCreateCommitmentPanel && canAddCommitment"
-                        class="rounded-xl border-2 border-blue-200 bg-white p-6 shadow-lg ring-1 ring-blue-100"
+                        v-if="hasAssignedForm"
+                        class="overflow-hidden rounded-xl border border-slate-200 bg-white p-2 shadow-sm sm:p-3"
                     >
-                        <div class="flex flex-wrap items-start justify-between gap-3 border-b border-slate-100 pb-4">
-                            <div class="flex items-start gap-3">
-                                <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-100 text-blue-700">
-                                    <AppIcon name="plus" class="h-5 w-5" />
-                                </span>
-                                <div>
-                                    <h4 class="text-lg font-semibold text-slate-900">New commitment & evidence</h4>
-                                    <p class="mt-1 text-xs text-slate-500">
-                                        Fill in your commitments like the IPCR form, then optionally attach up to 3 evidence files for the whole package in one step.
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
-
-                        <form class="mt-6" @submit.prevent="submitNewCommitment">
-                            <CommitmentPackageForm
-                                v-model:entries="commitmentForm.entries"
-                                v-model:evidence="commitmentForm.evidence"
-                                :weight-summary="weightSummary"
-                                :errors="commitmentForm.errors"
-                                :processing="commitmentForm.processing"
-                                show-evidence
-                                submit-label="Save commitments"
-                                @submit="submitNewCommitment"
-                                @cancel="closeCreateCommitmentPanel"
-                            />
-                        </form>
-                    </div>
-
-                    <div
-                        v-if="!groupedCommitments.length && canAddCommitment"
-                        class="rounded-xl border border-dashed border-slate-300 bg-white/60 p-8 text-center text-sm text-slate-500"
-                    >
-                        <AppIcon name="clipboard" class="mx-auto h-8 w-8 text-slate-300" />
-                        <p class="mt-3">
-                            No commitments for this quarter yet. Click
-                            <strong class="inline-flex items-center gap-1">
-                                <AppIcon name="plus" class="h-3.5 w-3.5" />
-                                Add commitment
-                            </strong>
-                            to get started.
-                        </p>
-                    </div>
-                    <div
-                        v-else-if="!groupedCommitments.length"
-                        class="rounded-xl border border-dashed border-slate-300 bg-white/60 p-8 text-center text-sm text-slate-500"
-                    >
-                        <AppIcon name="clipboard" class="mx-auto h-8 w-8 text-slate-300" />
-                        <p class="mt-3">No editable commitments for this quarter right now.</p>
-                    </div>
-
-                    <div
-                        v-for="g in groupedCommitments"
-                        :key="g.key"
-                        class="overflow-hidden rounded-xl border bg-white shadow-sm"
-                        :class="g.status === 'returned'
-                            ? 'border-amber-300 ring-1 ring-amber-100'
-                            : 'border-slate-200'"
-                    >
-                        <div class="flex flex-col gap-4 border-b border-slate-100 p-5 sm:flex-row sm:items-start sm:justify-between">
-                            <div class="min-w-0 flex-1">
-                                <div class="flex flex-wrap items-center gap-2">
-                                    <h4 class="text-base font-semibold text-slate-900">
-                                        {{ packageCardTitle(g) }}
-                                        <span v-if="g.created_at" class="ml-1 text-xs font-normal text-slate-500">
-                                            · saved {{ formatBatchDate(g.created_at) }}
-                                        </span>
-                                    </h4>
-                                    <span class="rounded-full px-2 py-0.5 text-xs font-semibold ring-1" :class="statusBadge(g.status)">
-                                        {{ statusLabel(g.status) }}
-                                    </span>
-                                </div>
-                                <p class="mt-1 text-sm text-slate-500">
-                                    {{ g.period_label }}
-                                    <span v-if="g.has_core && g.has_strategic" class="font-medium text-slate-600">
-                                        · Core + Strategic
-                                    </span>
-                                    · {{ g.functions.length }} function{{ g.functions.length === 1 ? '' : 's' }}
-                                    · {{ g.items.length }} indicator{{ g.items.length === 1 ? '' : 's' }}
-                                    · Σ Weight <strong>{{ g.total_weight.toFixed(2) }}%</strong>
-                                    <span
-                                        v-if="g.total_evidence"
-                                        class="ml-1 inline-flex items-center gap-0.5 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-800 ring-1 ring-emerald-100"
-                                    >
-                                        <AppIcon name="paper-clip" class="h-3 w-3" />
-                                        {{ g.total_evidence }} evidence file{{ g.total_evidence === 1 ? '' : 's' }}
-                                    </span>
-                                    <span v-else class="ml-1 text-slate-400">· no evidence yet</span>
-                                </p>
-                            </div>
-                            <div class="flex shrink-0 items-center gap-2">
-                                <PrimaryButton
-                                    type="button"
-                                    class="!bg-blue-600 hover:!bg-blue-700"
-                                    @click="router.visit(route('employee.commitments.show', g.first_id))"
-                                >
-                                    <span class="inline-flex items-center gap-1.5">
-                                        <AppIcon :name="packageIsEditable(g.status) ? 'pencil' : 'eye'" class="h-4 w-4" />
-                                        {{ packageIsEditable(g.status) ? 'Edit' : 'View' }}
-                                    </span>
-                                </PrimaryButton>
-                            </div>
-                        </div>
-                        <div class="p-4 sm:p-5">
-                            <CommitmentIpcrTable :commitments="g.items" />
-                        </div>
+                        <IpcrEmployeeAnswerTable
+                            v-model:rows="answerForm.commitments"
+                            :editable="canAnswerForm"
+                            :processing="answerForm.processing"
+                            :errors="answerForm.errors"
+                            submit-label="Save accomplishments"
+                            @submit="saveAnswers"
+                            @cancel="cancelAnswers"
+                            @view="openFormView"
+                        />
                     </div>
                 </div>
 

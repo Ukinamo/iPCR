@@ -15,7 +15,7 @@ class CommitmentPeriodLockTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_employee_cannot_add_commitments_while_submission_is_in_review(): void
+    public function test_employee_cannot_create_form_rows_while_submission_is_in_review(): void
     {
         $supervisor = User::factory()->create(['role' => UserRole::Supervisor]);
         $employee = User::factory()->create([
@@ -61,5 +61,6 @@ class CommitmentPeriodLockTest extends TestCase
         ]);
 
         $response->assertSessionHasErrors('entries');
+        $this->assertSame(1, Commitment::query()->where('user_id', $employee->id)->count());
     }
 }

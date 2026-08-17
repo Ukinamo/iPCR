@@ -7,6 +7,7 @@ use App\Enums\UserRole;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Services\AuditLogger;
+use App\Services\IpcrFormTemplateProvisioner;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -55,6 +56,8 @@ class UserAdminController extends Controller
         ]);
 
         AuditLogger::log($request->user()->id, 'user.registration.approved', $user, null, $request);
+
+        app(IpcrFormTemplateProvisioner::class)->provisionAssignedForEmployee($user->fresh());
 
         return to_route('admin.users.pending')->with('status', 'Registration approved. The employee can now sign in.');
     }
@@ -119,6 +122,10 @@ class UserAdminController extends Controller
 
         AuditLogger::log($request->user()->id, 'user.created', $user, null, $request);
 
+        if ($user->isEmployee()) {
+            app(IpcrFormTemplateProvisioner::class)->provisionAssignedForEmployee($user);
+        }
+
         return to_route('admin.users.index')->with('status', 'User created.');
     }
 
@@ -157,6 +164,10 @@ class UserAdminController extends Controller
         $user->update($payload);
 
         AuditLogger::log($request->user()->id, 'user.updated', $user, null, $request);
+
+        if ($user->fresh()->isEmployee()) {
+            app(IpcrFormTemplateProvisioner::class)->provisionAssignedForEmployee($user->fresh());
+        }
 
         return to_route('admin.users.index')->with('status', 'User updated.');
     }
