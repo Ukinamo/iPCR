@@ -178,10 +178,10 @@ const totalWeight = computed(() =>
                                             :rowspan="fnGroup.items.length"
                                             class="border border-slate-300 px-2 py-1.5 font-semibold text-slate-800"
                                         >
-                                            {{ fnGroup.title || '—' }}
+                                            {{ fnGroup.title }}
                                         </td>
                                         <td class="border border-slate-300 px-2 py-1.5 whitespace-pre-line text-slate-700">
-                                            {{ item.description || '—' }}
+                                            {{ item.description }}
                                         </td>
                                         <td class="border border-slate-300 px-2 py-1.5 text-center font-medium text-slate-800">
                                             {{ formatWeight(item.weight) }}

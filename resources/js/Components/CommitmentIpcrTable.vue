@@ -27,12 +27,12 @@ const sortedCommitments = computed(() =>
 );
 
 function functionTitleKey(c) {
-    return (c.title || '').trim() || '(untitled function)';
+    const title = (c.title || '').trim();
+    return title || `__blank_${c.id ?? Math.random()}`;
 }
 
 function indicatorText(c) {
-    const desc = (c?.description ?? '').trim();
-    return desc || (c?.title ?? '') || '—';
+    return (c?.description ?? '').trim();
 }
 
 function displayValue(value) {
@@ -49,7 +49,7 @@ function buildSectionLayout(functionType) {
     for (const c of commitments) {
         const key = functionTitleKey(c);
         if (!map.has(key)) {
-            map.set(key, { title: key, commitments: [] });
+            map.set(key, { title: (c.title || '').trim(), commitments: [] });
             order.push(key);
         }
         map.get(key).commitments.push(c);

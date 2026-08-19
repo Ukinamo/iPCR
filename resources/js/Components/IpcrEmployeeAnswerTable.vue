@@ -225,10 +225,10 @@ const inputClass = 'h-7 w-full min-w-0 rounded border-gray-300 px-0.5 py-0 text-
                                     :rowspan="fnGroup.indexes.length"
                                     class="border border-slate-300 px-1 py-1 text-left font-semibold break-words text-slate-800"
                                 >
-                                    {{ fnGroup.title || '—' }}
+                                    {{ fnGroup.title }}
                                 </td>
                                 <td class="border border-slate-300 px-1 py-1 text-left break-words text-slate-700">
-                                    {{ rows[rowIndex].description || '—' }}
+                                    {{ rows[rowIndex].description }}
                                 </td>
                                 <td :class="cell + ' font-medium text-slate-800'">
                                     {{ rows[rowIndex].weight != null && rows[rowIndex].weight !== ''

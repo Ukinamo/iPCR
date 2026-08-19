@@ -264,7 +264,7 @@ class FormTemplateController extends Controller
             'entries' => ['required', 'array', 'min:1'],
             'entries.*.id' => ['nullable', 'integer'],
             'entries.*.function_type' => ['required', 'in:core,strategic'],
-            'entries.*.title' => ['required', 'string', 'max:255'],
+            'entries.*.title' => ['nullable', 'string', 'max:255'],
             'entries.*.description' => ['nullable', 'string', 'max:8000'],
             'entries.*.weight' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'entries.*.annual_office_target' => ['nullable', 'string', 'max:255'],
@@ -345,7 +345,7 @@ class FormTemplateController extends Controller
             $payload = [
                 'sort_order' => $index,
                 'function_type' => $entry['function_type'],
-                'title' => $entry['title'],
+                'title' => filled($entry['title'] ?? null) ? $entry['title'] : null,
                 'description' => $entry['description'] ?? null,
                 'weight' => $this->normalizeWeight($entry['weight'] ?? null),
                 'annual_office_target' => $entry['annual_office_target'] ?? null,

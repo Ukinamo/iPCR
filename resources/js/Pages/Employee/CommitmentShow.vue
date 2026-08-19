@@ -176,6 +176,7 @@ function cancelView() {
                     Back to dashboard
                 </Link>
                 <button
+                    v-if="canManagePackage"
                     type="button"
                     class="inline-flex items-center rounded-md bg-black px-4 py-2 text-xs font-semibold uppercase tracking-widest text-white shadow-sm hover:bg-zinc-800"
                     @click="cancelView"

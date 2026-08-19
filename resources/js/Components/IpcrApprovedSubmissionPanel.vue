@@ -32,9 +32,9 @@ function submissionTotals(submission) {
 
 function indicatorLines(c) {
     const desc = (c?.description ?? '').trim();
-    if (!desc) return [c?.title ?? ''];
+    if (!desc) return [''];
     const lines = desc.split(/\r\n|\r|\n/).map((l) => l.trim()).filter(Boolean);
-    return lines.length ? lines : [c?.title ?? ''];
+    return lines.length ? lines : [''];
 }
 
 function formatAverage(c) {

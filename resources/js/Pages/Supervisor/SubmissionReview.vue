@@ -338,13 +338,14 @@ function rowWeightedDisplay(commitment, row) {
 
 function indicatorLines(c) {
     const desc = (c?.description ?? '').trim();
-    if (!desc) return [c?.title ?? ''];
+    if (!desc) return [''];
     const lines = desc.split(/\r\n|\r|\n/).map((l) => l.trim()).filter(Boolean);
-    return lines.length ? lines : [c?.title ?? ''];
+    return lines.length ? lines : [''];
 }
 
 function functionTitleKey(c) {
-    return (c.title || '').trim() || '(untitled function)';
+    const title = (c.title || '').trim();
+    return title || `__blank_${c.id ?? Math.random()}`;
 }
 
 function buildSectionLayout(functionType) {
@@ -355,7 +356,7 @@ function buildSectionLayout(functionType) {
     for (const c of commitments) {
         const key = functionTitleKey(c);
         if (!map.has(key)) {
-            map.set(key, { title: key, commitments: [] });
+            map.set(key, { title: (c.title || '').trim(), commitments: [] });
             order.push(key);
         }
         map.get(key).commitments.push(c);
@@ -868,10 +869,10 @@ function badge(status) {
                                                     :rowspan="fnGroup.indexes.length"
                                                     class="border border-slate-300 px-2 py-1 align-top font-semibold text-slate-800"
                                                 >
-                                                    {{ fnGroup.title || '—' }}
+                                                    {{ fnGroup.title }}
                                                 </td>
                                                 <td class="border border-slate-300 px-2 py-1 text-slate-700 whitespace-pre-line">
-                                                    {{ reviewForm.commitments[rowIndex].description || '—' }}
+                                                    {{ reviewForm.commitments[rowIndex].description }}
                                                 </td>
                                                 <td class="border border-slate-300 px-2 py-1 text-center font-medium text-slate-800">
                                                     {{ reviewForm.commitments[rowIndex].weight != null && reviewForm.commitments[rowIndex].weight !== ''

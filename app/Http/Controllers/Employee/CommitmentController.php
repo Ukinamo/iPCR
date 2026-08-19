@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Employee;
 
+use App\Enums\SubmissionStatus;
 use App\Http\Controllers\Controller;
 use App\Models\Commitment;
 use App\Models\IpcrSubmission;
@@ -19,11 +20,21 @@ class CommitmentController extends Controller
         return $this->denyStructureEdit();
     }
 
-    public function show(Request $request, Commitment $commitment): Response
+    public function show(Request $request, Commitment $commitment): Response|RedirectResponse
     {
         $this->authorizeCommitment($request, $commitment);
 
         $siblings = $this->siblingsFor($commitment);
+
+        $submission = IpcrSubmission::query()
+            ->where('employee_id', $commitment->user_id)
+            ->where('evaluation_year', $commitment->evaluation_year)
+            ->where('evaluation_quarter', $commitment->evaluation_quarter)
+            ->first();
+
+        if ($submission?->status === SubmissionStatus::Approved) {
+            return redirect()->route('dashboard');
+        }
 
         $totalWeight = (float) $siblings->sum('weight');
         $totalEvidence = (int) $siblings->sum(fn ($c) => $c->accomplishments->count());
@@ -38,12 +49,6 @@ class CommitmentController extends Controller
             (int) $commitment->evaluation_year,
             (int) $commitment->evaluation_quarter,
         );
-
-        $submission = IpcrSubmission::query()
-            ->where('employee_id', $commitment->user_id)
-            ->where('evaluation_year', $commitment->evaluation_year)
-            ->where('evaluation_quarter', $commitment->evaluation_quarter)
-            ->first();
 
         return Inertia::render('Employee/CommitmentShow', [
             'group' => [

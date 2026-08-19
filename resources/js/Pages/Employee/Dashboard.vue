@@ -41,7 +41,9 @@ const props = defineProps({
 /** First checklist row that is not done — what the employee should do next */
 const firstBlockingSubmitStep = computed(() => props.submitSteps?.find((s) => !s.done) ?? null);
 
-const tab = ref('commitments');
+const isApproved = computed(() => props.submission?.status === 'approved');
+
+const tab = ref(isApproved.value ? 'history' : 'commitments');
 
 const statCards = [
     { key: 'activeCommitments', label: 'Active Commitments', icon: 'clipboard', tone: 'bg-sky-100 text-sky-700' },
@@ -161,9 +163,9 @@ function historyTotals(submission) {
 
 function indicatorLines(c) {
     const desc = (c?.description ?? '').trim();
-    if (!desc) return [c?.title ?? ''];
+    if (!desc) return [''];
     const lines = desc.split(/\r\n|\r|\n/).map(l => l.trim()).filter(Boolean);
-    return lines.length ? lines : [c?.title ?? ''];
+    return lines.length ? lines : [''];
 }
 
 function formatAverage(c) {
@@ -226,7 +228,7 @@ function formatWeighted(c) {
                 </div>
 
                 <div
-                    v-if="submission"
+                    v-if="submission && !isApproved"
                     class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
                 >
                     <div class="flex flex-wrap items-start justify-between gap-3">
@@ -271,7 +273,7 @@ function formatWeighted(c) {
                     </div>
                 </div>
 
-                <div class="rounded-xl border border-indigo-100 bg-indigo-50/80 p-5 text-sm text-indigo-950 shadow-sm">
+                <div v-if="!isApproved" class="rounded-xl border border-indigo-100 bg-indigo-50/80 p-5 text-sm text-indigo-950 shadow-sm">
                     <div class="flex items-start gap-3">
                         <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-indigo-100 text-indigo-700">
                             <AppIcon name="chart-bar" class="h-5 w-5" />
@@ -325,6 +327,19 @@ function formatWeighted(c) {
                 </div>
 
                 <div v-show="tab === 'commitments'" class="space-y-4">
+                    <div
+                        v-if="isApproved"
+                        class="rounded-xl border border-emerald-200 bg-emerald-50 p-5 text-sm text-emerald-950 shadow-sm"
+                    >
+                        <p class="font-semibold text-emerald-900">This period’s IPCR form is approved.</p>
+                        <p class="mt-1 text-emerald-900/90">
+                            It is no longer shown here. Open
+                            <button type="button" class="font-semibold underline" @click="tab = 'history'">Commitment history</button>
+                            to view it.
+                        </p>
+                    </div>
+
+                    <template v-else>
                     <div v-if="submitSteps?.length" class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
                         <div class="flex items-start gap-3">
                             <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-amber-100 text-amber-700">
@@ -429,11 +444,13 @@ function formatWeighted(c) {
                             :processing="answerForm.processing"
                             :errors="answerForm.errors"
                             submit-label="Save accomplishments"
+                            :show-cancel="canAnswerForm"
                             @submit="saveAnswers"
                             @cancel="cancelAnswers"
                             @view="openFormView"
                         />
                     </div>
+                    </template>
                 </div>
 
                 <div v-show="tab === 'history'" class="space-y-4">

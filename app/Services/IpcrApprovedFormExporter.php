@@ -521,13 +521,13 @@ final class IpcrApprovedFormExporter
     {
         $desc = (string) ($c->description ?? '');
         if (trim($desc) === '') {
-            return [(string) $c->title];
+            return [''];
         }
 
         $parts = preg_split('/\r\n|\r|\n/', $desc) ?: [];
         $parts = array_values(array_filter(array_map('trim', $parts), fn ($line) => $line !== ''));
 
-        return empty($parts) ? [(string) $c->title] : $parts;
+        return empty($parts) ? [''] : $parts;
     }
 
     private static function setWholeNum(Worksheet $sheet, int $col, int $row, mixed $value): void

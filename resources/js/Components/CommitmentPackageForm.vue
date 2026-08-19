@@ -4,7 +4,7 @@ import InputError from '@/Components/InputError.vue';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
 import SecondaryButton from '@/Components/SecondaryButton.vue';
 import TextInput from '@/Components/TextInput.vue';
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 
 const entries = defineModel('entries', { type: Array, required: true });
 
@@ -36,7 +36,7 @@ const props = defineProps({
     },
     intro: {
         type: String,
-        default: 'Fill in commitments like the IPCR form. Use + Add row under a Function for each Services/Indicator that has its own Weight, Annual Office Target, and Individual Annual Targets.',
+        default: 'Fill in commitments like the IPCR form. Use + Add row under a Function for each Services/Indicator that has its own Weight, Annual Office Target, and Individual Annual Targets. Drag the handle to rearrange rows.',
     },
     showCancel: {
         type: Boolean,
@@ -61,6 +61,14 @@ const strategicEntries = computed(() =>
         .map((entry, idx) => ({ entry, idx }))
         .filter((x) => x.entry.function_type === 'strategic'),
 );
+
+const sections = computed(() => [
+    { type: 'core', label: 'Core Functions', list: coreEntries.value, tone: 'blue' },
+    { type: 'strategic', label: 'Strategic Functions', list: strategicEntries.value, tone: 'amber' },
+]);
+
+const dragFrom = ref(null);
+const dragOver = ref(null);
 
 function sectionCap(type) {
     return type === 'core'
@@ -125,6 +133,81 @@ function removeFunctionEntry(eIdx) {
     if (sameType.length <= 1) return;
     entries.value.splice(eIdx, 1);
 }
+
+function moveFunction(entryIdx, delta) {
+    const type = entries.value[entryIdx]?.function_type;
+    if (!type) return;
+    const same = entries.value
+        .map((entry, idx) => ({ entry, idx }))
+        .filter((x) => x.entry.function_type === type);
+    const pos = same.findIndex((x) => x.idx === entryIdx);
+    const target = same[pos + delta];
+    if (!target) return;
+    const copy = [...entries.value];
+    const current = copy[entryIdx];
+    copy[entryIdx] = copy[target.idx];
+    copy[target.idx] = current;
+    entries.value = copy;
+}
+
+function onItemDragStart(event, entryIdx, itemIdx) {
+    dragFrom.value = { entryIdx, itemIdx };
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', `${entryIdx}:${itemIdx}`);
+}
+
+function onItemDragOver(event, entryIdx, itemIdx) {
+    event.preventDefault();
+    if (!dragFrom.value) return;
+    if (entries.value[dragFrom.value.entryIdx]?.function_type !== entries.value[entryIdx]?.function_type) {
+        return;
+    }
+    event.dataTransfer.dropEffect = 'move';
+    dragOver.value = { entryIdx, itemIdx };
+}
+
+function onItemDrop(event, entryIdx, itemIdx) {
+    event.preventDefault();
+    const from = dragFrom.value;
+    dragFrom.value = null;
+    dragOver.value = null;
+    if (!from) return;
+
+    const source = entries.value[from.entryIdx];
+    const target = entries.value[entryIdx];
+    if (!source || !target || source.function_type !== target.function_type) {
+        return;
+    }
+
+    if (from.entryIdx === entryIdx) {
+        if (from.itemIdx === itemIdx) return;
+        const next = [...source.items];
+        const [row] = next.splice(from.itemIdx, 1);
+        next.splice(itemIdx, 0, row);
+        entries.value[entryIdx].items = next;
+        return;
+    }
+
+    if (source.items.length <= 1) {
+        return;
+    }
+
+    const nextSource = [...source.items];
+    const [row] = nextSource.splice(from.itemIdx, 1);
+    source.items = nextSource;
+    const nextTarget = [...target.items];
+    nextTarget.splice(itemIdx, 0, row);
+    target.items = nextTarget;
+}
+
+function onItemDragEnd() {
+    dragFrom.value = null;
+    dragOver.value = null;
+}
+
+function isDropTarget(entryIdx, itemIdx) {
+    return dragOver.value?.entryIdx === entryIdx && dragOver.value?.itemIdx === itemIdx;
+}
 </script>
 
 <template>
@@ -145,235 +228,173 @@ function removeFunctionEntry(eIdx) {
                             Services / Programs / Projects / Indicators
                             <br />
                             <span class="text-[10px] font-normal normal-case text-slate-500">
-                                One indicator per row — use + Add row for another indicator
+                                Drag the handle to rearrange rows
                             </span>
                         </th>
                         <th class="border border-slate-300 px-2 py-2 text-center" style="min-width: 72px">Weight</th>
                         <th class="border border-slate-300 px-2 py-2 text-center" style="min-width: 110px">Annual Office Target</th>
                         <th class="border border-slate-300 px-2 py-2 text-center" style="min-width: 110px">Individual Annual Targets</th>
-                        <th class="border border-slate-300 px-2 py-2 text-center" style="min-width: 44px"></th>
+                        <th class="border border-slate-300 px-2 py-2 text-center" style="min-width: 88px">Move</th>
                     </tr>
                 </thead>
                 <tbody>
-                    <tr class="bg-blue-50">
-                        <td
-                            colspan="6"
-                            class="border border-slate-300 px-2 py-1 text-center text-[11px] font-bold uppercase tracking-wide"
-                            :class="sectionWeightTotal('core') > sectionCap('core') + 0.01
-                                ? 'bg-rose-100 text-rose-900'
-                                : 'text-blue-900'"
-                        >
-                            Core Functions · Shared cap {{ sectionCap('core') }}% —
-                            Σ <strong>{{ sectionWeightTotal('core') }}%</strong> used ·
-                            <span :class="sectionRemaining('core') === 0 ? 'text-emerald-700' : ''">
-                                {{ sectionRemaining('core') }}% remaining
-                            </span>
-                        </td>
-                    </tr>
-                    <template v-for="({ entry, idx: eIdx }) in coreEntries" :key="'core-' + eIdx">
-                        <template v-for="(item, iIdx) in entry.items" :key="item._uid ?? item.id">
-                            <tr :class="entry.enabled ? '' : 'opacity-50'">
-                                <td
-                                    v-if="iIdx === 0"
-                                    :rowspan="entry.items.length"
-                                    class="border border-slate-300 px-2 py-1 align-top"
-                                >
-                                    <TextInput
-                                        v-model="entry.title"
-                                        type="text"
-                                        class="block w-full text-xs"
-                                        placeholder="e.g. Development of Standards..."
-                                        :required="entry.enabled"
-                                    />
-                                    <div class="mt-2 flex items-center justify-between gap-2 text-[10px] text-slate-500">
-                                        <label class="inline-flex items-center gap-1">
-                                            <input
-                                                v-model="entry.enabled"
-                                                type="checkbox"
-                                                class="rounded border-slate-300 text-blue-600 shadow-sm"
-                                            />
-                                            Include
-                                        </label>
-                                        <span>Σ wt: <strong>{{ entryWeightTotal(entry) }}%</strong></span>
-                                    </div>
-                                    <div class="mt-2 flex flex-wrap gap-1">
-                                        <button
-                                            type="button"
-                                            class="inline-flex items-center rounded border border-blue-200 bg-blue-50 px-2 py-1 text-[10px] font-semibold text-blue-700 hover:bg-blue-100"
-                                            @click="addItemRow(eIdx)"
-                                        >
-                                            + Add row
-                                        </button>
-                                        <button
-                                            v-if="coreEntries.length > 1"
-                                            type="button"
-                                            class="inline-flex items-center rounded border border-rose-200 bg-rose-50 px-2 py-1 text-[10px] font-semibold text-rose-700 hover:bg-rose-100"
-                                            @click="removeFunctionEntry(eIdx)"
-                                        >
-                                            − Remove function
-                                        </button>
-                                    </div>
-                                </td>
-                                <td class="border border-slate-300 px-2 py-1 align-top">
-                                    <textarea
-                                        v-model="item.description"
-                                        rows="3"
-                                        class="block w-full rounded-md border-gray-300 text-xs shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                                        placeholder="One indicator per line"
-                                    />
-                                </td>
-                                <td class="border border-slate-300 px-2 py-1 align-top">
-                                    <TextInput
-                                        v-model="item.weight"
-                                        type="number"
-                                        step="0.01"
-                                        min="0"
-                                        max="100"
-                                        class="block w-full text-xs"
-                                        placeholder="Optional"
-                                    />
-                                </td>
-                                <td class="border border-slate-300 px-2 py-1 align-top">
-                                    <TextInput v-model="item.annual_office_target" type="text" class="block w-full text-xs" />
-                                </td>
-                                <td class="border border-slate-300 px-2 py-1 align-top">
-                                    <TextInput v-model="item.individual_annual_targets" type="text" class="block w-full text-xs" />
-                                </td>
-                                <td class="border border-slate-300 px-1 py-1 text-center align-top">
-                                    <button
-                                        v-if="entry.items.length > 1"
-                                        type="button"
-                                        class="inline-flex h-6 w-6 items-center justify-center rounded-full border border-rose-200 bg-rose-50 text-sm font-bold text-rose-700 hover:bg-rose-100"
-                                        title="Remove this row"
-                                        @click="removeItemRow(eIdx, iIdx)"
-                                    >
-                                        ×
-                                    </button>
-                                </td>
-                            </tr>
-                        </template>
-                    </template>
-                    <tr class="bg-blue-50/40">
-                        <td colspan="6" class="border border-slate-300 px-2 py-2 text-center">
-                            <button
-                                type="button"
-                                class="inline-flex items-center rounded-md border border-blue-300 bg-white px-3 py-1.5 text-[11px] font-semibold text-blue-700 shadow-sm hover:bg-blue-50"
-                                @click="addFunctionEntry('core')"
+                    <template v-for="section in sections" :key="section.type">
+                        <tr :class="section.tone === 'core' || section.type === 'core' ? 'bg-blue-50' : 'bg-amber-50'">
+                            <td
+                                colspan="6"
+                                class="border border-slate-300 px-2 py-1 text-center text-[11px] font-bold uppercase tracking-wide"
+                                :class="sectionWeightTotal(section.type) > sectionCap(section.type) + 0.01
+                                    ? 'bg-rose-100 text-rose-900'
+                                    : section.type === 'core' ? 'text-blue-900' : 'text-amber-900'"
                             >
-                                + Add Core Function
-                            </button>
-                        </td>
-                    </tr>
-
-                    <tr class="bg-amber-50">
-                        <td
-                            colspan="6"
-                            class="border border-slate-300 px-2 py-1 text-center text-[11px] font-bold uppercase tracking-wide"
-                            :class="sectionWeightTotal('strategic') > sectionCap('strategic') + 0.01
-                                ? 'bg-rose-100 text-rose-900'
-                                : 'text-amber-900'"
-                        >
-                            Strategic Functions · Shared cap {{ sectionCap('strategic') }}% —
-                            Σ <strong>{{ sectionWeightTotal('strategic') }}%</strong> used ·
-                            <span :class="sectionRemaining('strategic') === 0 ? 'text-emerald-700' : ''">
-                                {{ sectionRemaining('strategic') }}% remaining
-                            </span>
-                        </td>
-                    </tr>
-                    <template v-for="({ entry, idx: eIdx }) in strategicEntries" :key="'strat-' + eIdx">
-                        <template v-for="(item, iIdx) in entry.items" :key="item._uid ?? item.id">
-                            <tr :class="entry.enabled ? '' : 'opacity-50'">
-                                <td
-                                    v-if="iIdx === 0"
-                                    :rowspan="entry.items.length"
-                                    class="border border-slate-300 px-2 py-1 align-top"
+                                {{ section.label }} · Shared cap {{ sectionCap(section.type) }}% —
+                                Σ <strong>{{ sectionWeightTotal(section.type) }}%</strong> used ·
+                                <span :class="sectionRemaining(section.type) === 0 ? 'text-emerald-700' : ''">
+                                    {{ sectionRemaining(section.type) }}% remaining
+                                </span>
+                            </td>
+                        </tr>
+                        <template v-for="({ entry, idx: eIdx }) in section.list" :key="section.type + '-' + eIdx">
+                            <template v-for="(item, iIdx) in entry.items" :key="item._uid ?? item.id ?? iIdx">
+                                <tr
+                                    :class="[
+                                        entry.enabled ? '' : 'opacity-50',
+                                        isDropTarget(eIdx, iIdx) ? 'bg-sky-50 ring-2 ring-inset ring-sky-300' : '',
+                                    ]"
+                                    @dragover="onItemDragOver($event, eIdx, iIdx)"
+                                    @drop="onItemDrop($event, eIdx, iIdx)"
+                                    @dragend="onItemDragEnd"
                                 >
-                                    <TextInput
-                                        v-model="entry.title"
-                                        type="text"
-                                        class="block w-full text-xs"
-                                        placeholder="e.g. Strategic Project..."
-                                        :required="entry.enabled"
-                                    />
-                                    <div class="mt-2 flex items-center justify-between gap-2 text-[10px] text-slate-500">
-                                        <label class="inline-flex items-center gap-1">
-                                            <input
-                                                v-model="entry.enabled"
-                                                type="checkbox"
-                                                class="rounded border-slate-300 text-blue-600 shadow-sm"
-                                            />
-                                            Include
-                                        </label>
-                                        <span>Σ wt: <strong>{{ entryWeightTotal(entry) }}%</strong></span>
-                                    </div>
-                                    <div class="mt-2 flex flex-wrap gap-1">
-                                        <button
-                                            type="button"
-                                            class="inline-flex items-center rounded border border-amber-200 bg-amber-50 px-2 py-1 text-[10px] font-semibold text-amber-800 hover:bg-amber-100"
-                                            @click="addItemRow(eIdx)"
-                                        >
-                                            + Add row
-                                        </button>
-                                        <button
-                                            v-if="strategicEntries.length > 1"
-                                            type="button"
-                                            class="inline-flex items-center rounded border border-rose-200 bg-rose-50 px-2 py-1 text-[10px] font-semibold text-rose-700 hover:bg-rose-100"
-                                            @click="removeFunctionEntry(eIdx)"
-                                        >
-                                            − Remove function
-                                        </button>
-                                    </div>
-                                </td>
-                                <td class="border border-slate-300 px-2 py-1 align-top">
-                                    <textarea
-                                        v-model="item.description"
-                                        rows="3"
-                                        class="block w-full rounded-md border-gray-300 text-xs shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                                        placeholder="One indicator per line"
-                                    />
-                                </td>
-                                <td class="border border-slate-300 px-2 py-1 align-top">
-                                    <TextInput
-                                        v-model="item.weight"
-                                        type="number"
-                                        step="0.01"
-                                        min="0"
-                                        max="100"
-                                        class="block w-full text-xs"
-                                        placeholder="Optional"
-                                    />
-                                </td>
-                                <td class="border border-slate-300 px-2 py-1 align-top">
-                                    <TextInput v-model="item.annual_office_target" type="text" class="block w-full text-xs" />
-                                </td>
-                                <td class="border border-slate-300 px-2 py-1 align-top">
-                                    <TextInput v-model="item.individual_annual_targets" type="text" class="block w-full text-xs" />
-                                </td>
-                                <td class="border border-slate-300 px-1 py-1 text-center align-top">
-                                    <button
-                                        v-if="entry.items.length > 1"
-                                        type="button"
-                                        class="inline-flex h-6 w-6 items-center justify-center rounded-full border border-rose-200 bg-rose-50 text-sm font-bold text-rose-700 hover:bg-rose-100"
-                                        title="Remove this row"
-                                        @click="removeItemRow(eIdx, iIdx)"
+                                    <td
+                                        v-if="iIdx === 0"
+                                        :rowspan="entry.items.length"
+                                        class="border border-slate-300 px-2 py-1 align-top"
                                     >
-                                        ×
-                                    </button>
-                                </td>
-                            </tr>
+                                        <TextInput
+                                            v-model="entry.title"
+                                            type="text"
+                                            class="block w-full text-xs"
+                                            :placeholder="section.type === 'core' ? 'e.g. Development of Standards... (optional)' : 'e.g. Strategic Project... (optional)'"
+                                        />
+                                        <div class="mt-2 flex items-center justify-between gap-2 text-[10px] text-slate-500">
+                                            <label class="inline-flex items-center gap-1">
+                                                <input
+                                                    v-model="entry.enabled"
+                                                    type="checkbox"
+                                                    class="rounded border-slate-300 text-blue-600 shadow-sm"
+                                                />
+                                                Include
+                                            </label>
+                                            <span>Σ wt: <strong>{{ entryWeightTotal(entry) }}%</strong></span>
+                                        </div>
+                                        <div class="mt-2 flex flex-wrap gap-1">
+                                            <button
+                                                type="button"
+                                                class="inline-flex items-center rounded border px-2 py-1 text-[10px] font-semibold"
+                                                :class="section.type === 'core'
+                                                    ? 'border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100'
+                                                    : 'border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100'"
+                                                @click="addItemRow(eIdx)"
+                                            >
+                                                + Add row
+                                            </button>
+                                            <button
+                                                v-if="section.list.length > 1"
+                                                type="button"
+                                                class="inline-flex items-center rounded border border-rose-200 bg-rose-50 px-2 py-1 text-[10px] font-semibold text-rose-700 hover:bg-rose-100"
+                                                @click="removeFunctionEntry(eIdx)"
+                                            >
+                                                − Remove function
+                                            </button>
+                                        </div>
+                                        <div v-if="section.list.length > 1" class="mt-2 flex gap-1">
+                                            <button
+                                                type="button"
+                                                class="rounded border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+                                                :disabled="section.list[0].idx === eIdx"
+                                                title="Move function up"
+                                                @click="moveFunction(eIdx, -1)"
+                                            >
+                                                ↑ Function
+                                            </button>
+                                            <button
+                                                type="button"
+                                                class="rounded border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+                                                :disabled="section.list[section.list.length - 1].idx === eIdx"
+                                                title="Move function down"
+                                                @click="moveFunction(eIdx, 1)"
+                                            >
+                                                ↓ Function
+                                            </button>
+                                        </div>
+                                    </td>
+                                    <td class="border border-slate-300 px-2 py-1 align-top">
+                                        <textarea
+                                            v-model="item.description"
+                                            rows="3"
+                                            class="block w-full rounded-md border-gray-300 text-xs shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                                            placeholder="One indicator per line"
+                                        />
+                                    </td>
+                                    <td class="border border-slate-300 px-2 py-1 align-top">
+                                        <TextInput
+                                            v-model="item.weight"
+                                            type="number"
+                                            step="0.01"
+                                            min="0"
+                                            max="100"
+                                            class="block w-full text-xs"
+                                            placeholder="Optional"
+                                        />
+                                    </td>
+                                    <td class="border border-slate-300 px-2 py-1 align-top">
+                                        <TextInput v-model="item.annual_office_target" type="text" class="block w-full text-xs" />
+                                    </td>
+                                    <td class="border border-slate-300 px-2 py-1 align-top">
+                                        <TextInput v-model="item.individual_annual_targets" type="text" class="block w-full text-xs" />
+                                    </td>
+                                    <td class="border border-slate-300 px-1 py-1 text-center align-top">
+                                        <div class="flex items-center justify-center gap-1">
+                                            <button
+                                                v-if="entry.items.length > 1"
+                                                type="button"
+                                                class="inline-flex h-7 w-7 items-center justify-center rounded-full border border-rose-200 bg-rose-50 text-sm font-bold text-rose-700 hover:bg-rose-100"
+                                                title="Remove this row"
+                                                @click="removeItemRow(eIdx, iIdx)"
+                                            >
+                                                ×
+                                            </button>
+                                            <button
+                                                type="button"
+                                                class="flex h-7 w-7 cursor-grab items-center justify-center rounded border border-slate-200 bg-slate-50 text-slate-500 hover:bg-slate-100 active:cursor-grabbing"
+                                                title="Drag to reorder"
+                                                draggable="true"
+                                                @dragstart="onItemDragStart($event, eIdx, iIdx)"
+                                            >
+                                                <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                                                    <path d="M7 4h2v2H7V4zm4 0h2v2h-2V4zM7 9h2v2H7V9zm4 0h2v2h-2V9zM7 14h2v2H7v-2zm4 0h2v2h-2v-2z" />
+                                                </svg>
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            </template>
                         </template>
+                        <tr :class="section.type === 'core' ? 'bg-blue-50/40' : 'bg-amber-50/40'">
+                            <td colspan="6" class="border border-slate-300 px-2 py-2 text-center">
+                                <button
+                                    type="button"
+                                    class="inline-flex items-center rounded-md border bg-white px-3 py-1.5 text-[11px] font-semibold shadow-sm"
+                                    :class="section.type === 'core'
+                                        ? 'border-blue-300 text-blue-700 hover:bg-blue-50'
+                                        : 'border-amber-300 text-amber-800 hover:bg-amber-50'"
+                                    @click="addFunctionEntry(section.type)"
+                                >
+                                    + Add {{ section.type === 'core' ? 'Core' : 'Strategic' }} Function
+                                </button>
+                            </td>
+                        </tr>
                     </template>
-                    <tr class="bg-amber-50/40">
-                        <td colspan="6" class="border border-slate-300 px-2 py-2 text-center">
-                            <button
-                                type="button"
-                                class="inline-flex items-center rounded-md border border-amber-300 bg-white px-3 py-1.5 text-[11px] font-semibold text-amber-800 shadow-sm hover:bg-amber-50"
-                                @click="addFunctionEntry('strategic')"
-                            >
-                                + Add Strategic Function
-                            </button>
-                        </td>
-                    </tr>
                 </tbody>
             </table>
         </div>

@@ -266,4 +266,47 @@ class FormTemplateWorkflowTest extends TestCase
             'title' => 'Core Work',
         ]);
     }
+
+    public function test_admin_can_save_form_without_function_title(): void
+    {
+        $admin = User::factory()->create(['role' => UserRole::Administrator]);
+        $year = (int) now()->year;
+        $quarter = (int) ceil(now()->month / 3);
+
+        $this->actingAs($admin)->post(route('admin.forms.store'), [
+            'title' => 'Untitled functions',
+            'evaluation_year' => $year,
+            'evaluation_quarter' => $quarter,
+            'period_label' => 'Q'.$quarter.' '.$year,
+            'entries' => [
+                [
+                    'function_type' => 'core',
+                    'title' => null,
+                    'description' => 'Indicator A',
+                    'weight' => 60,
+                    'annual_office_target' => '10',
+                    'individual_annual_targets' => '5',
+                ],
+                [
+                    'function_type' => 'strategic',
+                    'title' => '',
+                    'description' => 'Indicator B',
+                    'weight' => 40,
+                    'annual_office_target' => '4',
+                    'individual_annual_targets' => '2',
+                ],
+            ],
+        ])->assertSessionHasNoErrors();
+
+        $this->assertDatabaseHas('ipcr_form_template_items', [
+            'function_type' => 'core',
+            'title' => null,
+            'description' => 'Indicator A',
+        ]);
+        $this->assertDatabaseHas('ipcr_form_template_items', [
+            'function_type' => 'strategic',
+            'title' => null,
+            'description' => 'Indicator B',
+        ]);
+    }
 }

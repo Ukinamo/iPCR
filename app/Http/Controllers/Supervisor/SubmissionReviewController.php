@@ -76,7 +76,7 @@ class SubmissionReviewController extends Controller
             'commitments' => ['required', 'array', 'min:1'],
             'commitments.*.id' => ['nullable', 'integer'],
             'commitments.*.function_type' => ['required', 'in:core,strategic'],
-            'commitments.*.title' => ['required', 'string', 'max:255'],
+            'commitments.*.title' => ['nullable', 'string', 'max:255'],
             'commitments.*.description' => ['nullable', 'string', 'max:8000'],
             'commitments.*.weight' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'commitments.*.annual_office_target' => ['nullable', 'string', 'max:255'],
@@ -124,7 +124,7 @@ class SubmissionReviewController extends Controller
 
             foreach ($data['commitments'] as $row) {
                 $payload = [
-                    'title' => $row['title'],
+                    'title' => filled($row['title'] ?? null) ? $row['title'] : null,
                     'description' => $row['description'] ?? null,
                     'function_type' => $row['function_type'],
                     'weight' => isset($row['weight']) && $row['weight'] !== '' && $row['weight'] !== null
