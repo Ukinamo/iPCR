@@ -1,7 +1,6 @@
 <script setup>
 import AppIcon from '@/Components/AppIcon.vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
-import InputLabel from '@/Components/InputLabel.vue';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
 import SecondaryButton from '@/Components/SecondaryButton.vue';
 import { Head, Link, router, usePage } from '@inertiajs/vue3';
@@ -9,26 +8,20 @@ import { reactive } from 'vue';
 
 defineProps({
     pendingUsers: Array,
-    supervisors: Array,
 });
 
 const page = usePage();
-const supervisorSelections = reactive({});
 const processing = reactive({});
 
 function approve(userId) {
     processing[userId] = true;
 
-    router.patch(
-        route('admin.users.approve', userId),
-        { supervisor_id: supervisorSelections[userId] },
-        {
-            preserveScroll: true,
-            onFinish: () => {
-                processing[userId] = false;
-            },
+    router.patch(route('admin.users.approve', userId), {}, {
+        preserveScroll: true,
+        onFinish: () => {
+            processing[userId] = false;
         },
-    );
+    });
 }
 
 function reject(userId, name) {
@@ -55,7 +48,7 @@ function formatDate(value) {
                     </span>
                     <div>
                         <h2 class="text-xl font-semibold leading-tight text-gray-800">Pending Registrations</h2>
-                        <p class="text-sm text-gray-500">Review new employee sign-ups and assign a supervisor before activating their account.</p>
+                        <p class="text-sm text-gray-500">Review new employee sign-ups before activating their account.</p>
                     </div>
                 </div>
                 <div class="flex gap-2">
@@ -96,33 +89,18 @@ function formatDate(value) {
                             <span class="rounded-full bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-900 ring-1 ring-amber-100">pending approval</span>
                         </div>
 
-                        <form class="mt-4 grid gap-4 md:grid-cols-[1fr_auto_auto]" @submit.prevent="approve(u.id)">
-                            <div>
-                                <InputLabel :for="`supervisor-${u.id}`" value="Assign supervisor" />
-                                <select
-                                    :id="`supervisor-${u.id}`"
-                                    v-model="supervisorSelections[u.id]"
-                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
-                                    required
-                                >
-                                    <option value="">Select supervisor</option>
-                                    <option v-for="s in supervisors" :key="s.id" :value="s.id">{{ s.name }} — {{ s.email }}</option>
-                                </select>
-                            </div>
-                            <div class="flex items-end">
-                                <PrimaryButton
-                                    class="bg-emerald-600 hover:bg-emerald-700 focus:ring-emerald-500"
-                                    :disabled="processing[u.id]"
-                                >
-                                    Approve
-                                </PrimaryButton>
-                            </div>
-                            <div class="flex items-end">
-                                <SecondaryButton type="button" class="text-rose-700 ring-rose-200" @click="reject(u.id, u.name)">
-                                    Reject
-                                </SecondaryButton>
-                            </div>
-                        </form>
+                        <div class="mt-4 flex flex-wrap gap-2">
+                            <PrimaryButton
+                                class="bg-emerald-600 hover:bg-emerald-700 focus:ring-emerald-500"
+                                :disabled="processing[u.id]"
+                                @click="approve(u.id)"
+                            >
+                                Approve
+                            </PrimaryButton>
+                            <SecondaryButton type="button" class="text-rose-700 ring-rose-200" @click="reject(u.id, u.name)">
+                                Reject
+                            </SecondaryButton>
+                        </div>
                     </div>
                 </div>
             </div>

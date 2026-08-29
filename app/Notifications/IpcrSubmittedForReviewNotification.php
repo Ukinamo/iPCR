@@ -31,12 +31,12 @@ class IpcrSubmittedForReviewNotification extends Notification
             'type' => 'ipcr_submitted',
             'title' => 'IPCR package submitted',
             'message' => sprintf(
-                '%s submitted Q%d %d for your review.',
+                '%s submitted Q%d %d for administrator review.',
                 $employee?->name ?? 'An employee',
                 $this->submission->evaluation_quarter,
                 $this->submission->evaluation_year,
             ),
-            'url' => route('supervisor.submissions.show', $this->submission->id),
+            'url' => route('admin.submissions.show', $this->submission->id),
             'submission_id' => $this->submission->id,
         ];
     }

@@ -17,6 +17,7 @@ class SubmissionReviewPackageEditTest extends TestCase
 
     public function test_supervisor_can_edit_package_fields_add_and_remove_rows_on_return(): void
     {
+        $admin = User::factory()->create(['role' => UserRole::Administrator]);
         $supervisor = User::factory()->create(['role' => UserRole::Supervisor]);
         $employee = User::factory()->create([
             'role' => UserRole::Employee,
@@ -66,7 +67,7 @@ class SubmissionReviewPackageEditTest extends TestCase
             'status' => CommitmentStatus::InReview,
         ]);
 
-        $response = $this->actingAs($supervisor)->patch(route('supervisor.submissions.update', $submission), [
+        $response = $this->actingAs($admin)->patch(route('admin.submissions.update', $submission), [
             'action' => 'return',
             'supervisor_feedback' => 'Please revise the indicators and weights before resubmitting.',
             'commitments' => [
@@ -122,6 +123,7 @@ class SubmissionReviewPackageEditTest extends TestCase
 
     public function test_supervisor_can_approve_with_edited_weights_and_new_row(): void
     {
+        $admin = User::factory()->create(['role' => UserRole::Administrator]);
         $supervisor = User::factory()->create(['role' => UserRole::Supervisor]);
         $employee = User::factory()->create([
             'role' => UserRole::Employee,
@@ -154,7 +156,7 @@ class SubmissionReviewPackageEditTest extends TestCase
             'status' => CommitmentStatus::InReview,
         ]);
 
-        $response = $this->actingAs($supervisor)->patch(route('supervisor.submissions.update', $submission), [
+        $response = $this->actingAs($admin)->patch(route('admin.submissions.update', $submission), [
             'action' => 'approve',
             'supervisor_feedback' => 'Good work.',
             'commitments' => [
@@ -218,6 +220,7 @@ class SubmissionReviewPackageEditTest extends TestCase
 
     public function test_supervisor_can_save_package_edits_without_leaving_review(): void
     {
+        $admin = User::factory()->create(['role' => UserRole::Administrator]);
         $supervisor = User::factory()->create(['role' => UserRole::Supervisor]);
         $employee = User::factory()->create([
             'role' => UserRole::Employee,
@@ -250,7 +253,7 @@ class SubmissionReviewPackageEditTest extends TestCase
             'status' => CommitmentStatus::InReview,
         ]);
 
-        $response = $this->actingAs($supervisor)->patch(route('supervisor.submissions.update', $submission), [
+        $response = $this->actingAs($admin)->patch(route('admin.submissions.update', $submission), [
             'action' => 'save',
             'commitments' => [
                 [

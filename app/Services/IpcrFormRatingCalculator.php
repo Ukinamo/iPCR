@@ -22,7 +22,33 @@ final class IpcrFormRatingCalculator
         ?float $q4Target,
         ?float $q4Actual,
     ): array {
-        if ($q3Target === null && $q3Actual === null && $q4Target === null && $q4Actual === null) {
+        return self::totalsFromQuarterPairs([
+            [$q3Target, $q3Actual],
+            [$q4Target, $q4Actual],
+        ]);
+    }
+
+    /**
+     * @param  list<array{0: ?float, 1: ?float}>  $pairs  target/actual pairs
+     * @return array{target_total: ?float, actual_total: ?float, percent: ?float}
+     */
+    public static function totalsFromQuarterPairs(array $pairs): array
+    {
+        $any = false;
+        $targetTotal = 0.0;
+        $actualTotal = 0.0;
+
+        foreach ($pairs as $pair) {
+            $target = $pair[0] ?? null;
+            $actual = $pair[1] ?? null;
+            if ($target !== null || $actual !== null) {
+                $any = true;
+            }
+            $targetTotal += max(0.0, (float) ($target ?? 0));
+            $actualTotal += max(0.0, (float) ($actual ?? 0));
+        }
+
+        if (! $any) {
             return [
                 'target_total' => null,
                 'actual_total' => null,
@@ -30,13 +56,11 @@ final class IpcrFormRatingCalculator
             ];
         }
 
-        $targetTotal = max(0.0, ($q3Target ?? 0.0) + ($q4Target ?? 0.0));
-        $actualTotal = max(0.0, ($q3Actual ?? 0.0) + ($q4Actual ?? 0.0));
         $percent = $targetTotal > 0 ? ($actualTotal / $targetTotal) : null;
 
         return [
-            'target_total' => round($targetTotal, 4),
-            'actual_total' => round($actualTotal, 4),
+            'target_total' => (float) round($targetTotal),
+            'actual_total' => (float) round($actualTotal),
             'percent' => $percent !== null ? round($percent, 6) : null,
         ];
     }
@@ -87,22 +111,30 @@ final class IpcrFormRatingCalculator
     /**
      * @return array{quality: ?int, efficiency: ?int, timeliness: ?int, average: ?float, weighted: ?float}
      */
+    public static function hasAnnualOfficeTarget(mixed $value): bool
+    {
+        return filled(trim((string) ($value ?? '')));
+    }
+
+    public static function hasWeight(mixed $value): bool
+    {
+        return $value !== null && $value !== '';
+    }
+
+    public static function isRateableRow(\App\Models\Commitment $commitment, array $row = []): bool
+    {
+        $target = $row['annual_office_target'] ?? $commitment->annual_office_target;
+        $weight = array_key_exists('weight', $row) ? $row['weight'] : $commitment->weight;
+
+        return self::hasAnnualOfficeTarget($target) || self::hasWeight($weight);
+    }
+
     public static function scoreRowFromRatings(
         int $quality,
         int $efficiency,
         int $timeliness,
         ?float $weightPercent,
     ): array {
-        if ($weightPercent === null) {
-            return [
-                'quality' => null,
-                'efficiency' => null,
-                'timeliness' => null,
-                'average' => null,
-                'weighted' => null,
-            ];
-        }
-
         $average = ($quality + $efficiency + $timeliness) / 3.0;
 
         return [
@@ -153,29 +185,35 @@ final class IpcrFormRatingCalculator
      * Persist accomplishment numbers and auto-computed (or provided) ratings onto a commitment.
      *
      * @param  array<string, mixed>  $row
+     * @param  list<int>|null  $includedQuarters
      */
-    public static function applyRowRatings(\App\Models\Commitment $commitment, array $row, bool $autoRatings = true): void
+    public static function applyRowRatings(\App\Models\Commitment $commitment, array $row, bool $autoRatings = true, ?array $includedQuarters = null): void
     {
-        $q3Target = self::nullableWholeNumber($row['rating_q3_target'] ?? null);
-        $q3Actual = self::nullableWholeNumber($row['rating_q3_actual'] ?? null);
-        $q4Target = self::nullableWholeNumber($row['rating_q4_target'] ?? null);
-        $q4Actual = self::nullableWholeNumber($row['rating_q4_actual'] ?? null);
-
-        $totals = self::totalsFromQ3Q4($q3Target, $q3Actual, $q4Target, $q4Actual);
-        $weight = $commitment->weight !== null ? (float) $commitment->weight : null;
-
+        $quarters = \App\Support\IpcrIncludedQuarters::existingOrDefault($includedQuarters ?? $row['included_quarters'] ?? null);
+        $pairs = [];
         $payload = [
-            'rating_q3_target' => $q3Target,
-            'rating_q3_actual' => $q3Actual,
-            'rating_q4_target' => $q4Target,
-            'rating_q4_actual' => $q4Actual,
-            'rating_target_total' => $totals['target_total'],
-            'rating_actual_total' => $totals['actual_total'],
-            'rating_percent' => $totals['percent'],
+            'rating_percent' => null,
             'remarks' => null,
         ];
 
-        if ($weight === null) {
+        foreach ([1, 2, 3, 4] as $quarter) {
+            $target = self::nullableWholeNumber($row["rating_q{$quarter}_target"] ?? null);
+            $actual = self::nullableWholeNumber($row["rating_q{$quarter}_actual"] ?? null);
+            $payload["rating_q{$quarter}_target"] = $target;
+            $payload["rating_q{$quarter}_actual"] = $actual;
+            if (in_array($quarter, $quarters, true)) {
+                $pairs[] = [$target, $actual];
+            }
+        }
+
+        $totals = self::totalsFromQuarterPairs($pairs);
+        $weight = $commitment->weight !== null ? (float) $commitment->weight : null;
+
+        $payload['rating_target_total'] = $totals['target_total'];
+        $payload['rating_actual_total'] = $totals['actual_total'];
+        $payload['rating_percent'] = $totals['percent'];
+
+        if (! self::isRateableRow($commitment, $row)) {
             $commitment->update([
                 ...$payload,
                 'rating_quality' => null,
@@ -189,13 +227,13 @@ final class IpcrFormRatingCalculator
         }
 
         $quality = isset($row['rating_quality']) && is_numeric($row['rating_quality'])
-            ? (int) $row['rating_quality']
+            ? max(0, min(5, (int) $row['rating_quality']))
             : null;
         $efficiency = isset($row['rating_efficiency']) && is_numeric($row['rating_efficiency'])
-            ? (int) $row['rating_efficiency']
+            ? max(0, min(5, (int) $row['rating_efficiency']))
             : null;
         $timeliness = isset($row['rating_timeliness']) && is_numeric($row['rating_timeliness'])
-            ? (int) $row['rating_timeliness']
+            ? max(0, min(5, (int) $row['rating_timeliness']))
             : null;
 
         if ($autoRatings || $quality === null || $efficiency === null || $timeliness === null) {
@@ -233,7 +271,7 @@ final class IpcrFormRatingCalculator
             'rating_weighted' => $scored['weighted'],
             'remarks' => $scored['weighted'] !== null
                 ? number_format((float) $scored['weighted'], 2, '.', '')
-                : null,
+                : number_format((float) $scored['average'], 2, '.', ''),
         ]);
     }
 

@@ -19,6 +19,7 @@ class IpcrFormTemplate extends Model
         'title',
         'status',
         'assigned_at',
+        'included_quarters',
     ];
 
     protected function casts(): array
@@ -26,6 +27,7 @@ class IpcrFormTemplate extends Model
         return [
             'status' => FormTemplateStatus::class,
             'assigned_at' => 'datetime',
+            'included_quarters' => 'array',
         ];
     }
 

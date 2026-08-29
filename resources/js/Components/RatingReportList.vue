@@ -174,47 +174,45 @@ function applyMonthFilter() {
             No approved IPCR ratings found for this filter.
         </div>
 
-        <div v-else class="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-            <div class="overflow-x-auto">
-                <table class="min-w-[720px] w-full divide-y divide-slate-200 text-sm">
-                    <thead class="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                        <tr>
-                            <th class="px-4 py-3">Period</th>
-                            <th class="px-4 py-3">Employee</th>
-                            <th class="hidden px-4 py-3 md:table-cell">Supervisor</th>
-                            <th class="px-4 py-3">Reviewed</th>
-                            <th class="px-4 py-3 text-center">Overall</th>
-                            <th class="px-4 py-3 text-right">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y divide-slate-100">
-                        <tr v-for="s in filtered" :key="s.id" class="hover:bg-slate-50/80">
-                            <td class="px-4 py-3 font-medium text-slate-900">{{ period(s) }}</td>
-                            <td class="px-4 py-3">
-                                <p class="font-medium text-slate-900">{{ s.employee?.name ?? '—' }}</p>
-                                <p class="text-xs text-slate-500">{{ s.employee?.email ?? '' }}</p>
-                            </td>
-                            <td class="hidden px-4 py-3 text-slate-700 md:table-cell">{{ s.supervisor?.name ?? '—' }}</td>
-                            <td class="px-4 py-3 text-slate-600">{{ formatReviewed(s.reviewed_at) }}</td>
-                            <td class="px-4 py-3 text-center font-semibold text-amber-800">
-                                {{ s.overall_rating != null ? formatDecimal(s.overall_rating, 2) : '—' }}
-                            </td>
-                            <td class="px-4 py-3">
-                                <div class="flex flex-col items-stretch justify-end gap-2 sm:flex-row sm:items-center">
-                                    <Link
-                                        :href="route(viewRouteName, s.id)"
-                                        class="inline-flex items-center justify-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-800 shadow-sm hover:bg-slate-50"
-                                    >
-                                        <AppIcon name="eye" class="h-3.5 w-3.5" />
-                                        View
-                                    </Link>
-                                    <IpcrPreviewLink mode="admin-submission" :submission-id="s.id" label="Preview" />
-                                </div>
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
+        <div v-else class="w-full rounded-xl border border-slate-200 bg-white shadow-sm">
+            <table class="w-full table-fixed divide-y divide-slate-200 text-sm">
+                <thead class="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    <tr>
+                        <th class="w-[16%] px-3 py-3">Period</th>
+                        <th class="px-3 py-3">Employee</th>
+                        <th class="hidden w-[18%] px-3 py-3 lg:table-cell">Supervisor</th>
+                        <th class="w-[16%] px-3 py-3">Reviewed</th>
+                        <th class="w-[12%] px-3 py-3 text-center">Overall</th>
+                        <th class="w-[22%] px-3 py-3 text-right">Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                    <tr v-for="s in filtered" :key="s.id" class="hover:bg-slate-50/80">
+                        <td class="break-words px-3 py-3 font-medium text-slate-900">{{ period(s) }}</td>
+                        <td class="px-3 py-3">
+                            <p class="break-words font-medium text-slate-900">{{ s.employee?.name ?? '—' }}</p>
+                            <p class="break-words text-xs text-slate-500">{{ s.employee?.email ?? '' }}</p>
+                        </td>
+                        <td class="hidden break-words px-3 py-3 text-slate-700 lg:table-cell">{{ s.supervisor?.name ?? '—' }}</td>
+                        <td class="break-words px-3 py-3 text-slate-600">{{ formatReviewed(s.reviewed_at) }}</td>
+                        <td class="px-3 py-3 text-center font-semibold text-amber-800">
+                            {{ s.overall_rating != null ? formatDecimal(s.overall_rating, 2) : '—' }}
+                        </td>
+                        <td class="px-3 py-3">
+                            <div class="flex flex-wrap items-center justify-end gap-1.5">
+                                <Link
+                                    :href="route(viewRouteName, s.id)"
+                                    class="inline-flex items-center justify-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-800 shadow-sm hover:bg-slate-50"
+                                >
+                                    <AppIcon name="eye" class="h-3.5 w-3.5" />
+                                    View
+                                </Link>
+                                <IpcrPreviewLink mode="admin-submission" :submission-id="s.id" label="Preview" />
+                            </div>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
         </div>
     </div>
 </template>

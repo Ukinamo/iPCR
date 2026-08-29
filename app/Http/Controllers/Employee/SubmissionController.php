@@ -19,58 +19,40 @@ class SubmissionController extends Controller
     public function store(Request $request): RedirectResponse
     {
         $data = $request->validate([
-            'evaluation_year' => ['required', 'integer', 'min:2000', 'max:2100'],
-            'evaluation_quarter' => ['required', 'integer', 'min:1', 'max:4'],
+            'submission_id' => ['required', 'integer'],
         ]);
 
         $user = $request->user();
 
         if ($user->supervisor_id === null) {
             throw ValidationException::withMessages([
-                'evaluation_quarter' => 'You must be assigned to a supervisor before you can submit an IPCR package. Contact an administrator.',
+                'submission_id' => 'You must be assigned to a supervisor before you can submit an IPCR package. Contact an administrator.',
             ]);
         }
 
-        $commitments = Commitment::query()
-            ->where('user_id', $user->id)
-            ->where('evaluation_year', $data['evaluation_year'])
-            ->where('evaluation_quarter', $data['evaluation_quarter'])
+        $submission = IpcrSubmission::query()
+            ->where('id', $data['submission_id'])
+            ->where('employee_id', $user->id)
+            ->firstOrFail();
+
+        if (! in_array($submission->status, [SubmissionStatus::Pending, SubmissionStatus::Returned], true)) {
+            throw ValidationException::withMessages([
+                'submission_id' => 'This package is already submitted or approved.',
+            ]);
+        }
+
+        $commitments = $submission->commitments()
             ->whereIn('status', [CommitmentStatus::Draft, CommitmentStatus::Returned])
             ->get();
 
         if ($commitments->isEmpty()) {
-            return back()->withErrors(['evaluation_quarter' => 'No IPCR form has been assigned for this period yet. Ask your administrator to create the form and assign it to your supervisor.']);
-        }
-
-        $hasAccomplishments = $commitments->contains(function ($c) {
-            return $c->weight === null
-                || $c->rating_q3_actual !== null
-                || $c->rating_q4_actual !== null
-                || $c->rating_actual_total !== null;
-        });
-
-        if (! $hasAccomplishments) {
-            return back()->withErrors(['evaluation_quarter' => 'Fill in your accomplishments on the assigned form before submitting.']);
+            return back()->withErrors(['submission_id' => 'This package has no form rows to submit.']);
         }
 
         $totals = CommitmentWeightRules::totalsForSubmissionBatch($commitments);
         $splitError = CommitmentWeightRules::submissionErrorIfInvalid($totals['core'], $totals['strategic']);
         if ($splitError !== null) {
-            return back()->withErrors(['evaluation_quarter' => $splitError]);
-        }
-
-        $submission = IpcrSubmission::query()->firstOrNew([
-            'employee_id' => $user->id,
-            'evaluation_year' => $data['evaluation_year'],
-            'evaluation_quarter' => $data['evaluation_quarter'],
-        ]);
-
-        if ($submission->exists && $submission->status === SubmissionStatus::Approved) {
-            return back()->withErrors(['evaluation_quarter' => 'This period is already approved.']);
-        }
-
-        if ($submission->exists && $submission->status === SubmissionStatus::InReview) {
-            return back()->withErrors(['evaluation_quarter' => 'This period is already with your supervisor.']);
+            return back()->withErrors(['submission_id' => $splitError]);
         }
 
         $submission->supervisor_id = $user->supervisor_id;
@@ -80,7 +62,6 @@ class SubmissionController extends Controller
 
         foreach ($commitments as $c) {
             $c->update([
-                'ipcr_submission_id' => $submission->id,
                 'status' => CommitmentStatus::InReview,
             ]);
         }
@@ -89,6 +70,31 @@ class SubmissionController extends Controller
 
         app(SupervisorTransferService::class)->notifySubmissionSubmitted($submission->fresh(['employee', 'supervisor']));
 
-        return back()->with('status', 'Your IPCR package was sent for supervisor review.');
+        return redirect()
+            ->route('dashboard')
+            ->with('status', 'Your IPCR package was sent for administrator review.');
+    }
+
+    public function cancel(Request $request, IpcrSubmission $submission): RedirectResponse
+    {
+        abort_unless($submission->employee_id === $request->user()->id, 403);
+
+        if ($submission->status !== SubmissionStatus::InReview) {
+            throw ValidationException::withMessages([
+                'submission_id' => 'Only a submitted package can be cancelled.',
+            ]);
+        }
+
+        $submission->status = SubmissionStatus::Pending;
+        $submission->submitted_at = null;
+        $submission->save();
+
+        $submission->commitments()
+            ->where('status', CommitmentStatus::InReview)
+            ->update(['status' => CommitmentStatus::Draft]);
+
+        AuditLogger::log($request->user()->id, 'ipcr.submission.cancelled', $submission, null, $request);
+
+        return back()->with('status', 'Submission cancelled. You can edit and submit again.');
     }
 }

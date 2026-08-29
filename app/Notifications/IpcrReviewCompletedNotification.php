@@ -34,7 +34,7 @@ class IpcrReviewCompletedNotification extends Notification
             'type' => $approved ? 'ipcr_approved' : 'ipcr_returned',
             'title' => $approved ? 'IPCR package approved' : 'IPCR package returned',
             'message' => sprintf(
-                'Your Q%d %d IPCR package was %s by your supervisor.',
+                'Your Q%d %d IPCR package was %s by an administrator.',
                 $this->submission->evaluation_quarter,
                 $this->submission->evaluation_year,
                 $approved ? 'approved' : 'returned for revision',

@@ -7,7 +7,7 @@ use App\Enums\UserRole;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Services\AuditLogger;
-use App\Services\IpcrFormTemplateProvisioner;
+use App\Services\SupervisorTransferService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -21,9 +21,7 @@ class UserAdminController extends Controller
     {
         return Inertia::render('Admin/Users/Index', [
             'users' => User::query()->orderBy('name')->get(),
-            'supervisors' => $this->supervisors(),
             'pendingCount' => User::query()->where('account_status', AccountStatus::Pending)->count(),
-            'pendingTransferCount' => \App\Models\SupervisorTransferRequest::where('status', \App\Enums\TransferRequestStatus::Pending)->count(),
         ]);
     }
 
@@ -34,7 +32,6 @@ class UserAdminController extends Controller
                 ->where('account_status', AccountStatus::Pending)
                 ->orderBy('created_at')
                 ->get(),
-            'supervisors' => $this->supervisors(),
         ]);
     }
 
@@ -43,21 +40,11 @@ class UserAdminController extends Controller
         abort_if($user->account_status !== AccountStatus::Pending, 404);
         abort_if($user->role !== UserRole::Employee, 404);
 
-        $data = $request->validate([
-            'supervisor_id' => [
-                'required',
-                Rule::exists('users', 'id')->where(fn ($q) => $q->where('role', UserRole::Supervisor)),
-            ],
-        ]);
-
         $user->update([
             'account_status' => AccountStatus::Active,
-            'supervisor_id' => $data['supervisor_id'],
         ]);
 
         AuditLogger::log($request->user()->id, 'user.registration.approved', $user, null, $request);
-
-        app(IpcrFormTemplateProvisioner::class)->provisionAssignedForEmployee($user->fresh());
 
         return to_route('admin.users.pending')->with('status', 'Registration approved. The employee can now sign in.');
     }
@@ -78,16 +65,13 @@ class UserAdminController extends Controller
 
     public function create(): Response
     {
-        return Inertia::render('Admin/Users/Create', [
-            'supervisors' => $this->supervisors(),
-        ]);
+        return Inertia::render('Admin/Users/Create');
     }
 
     public function edit(User $user): Response
     {
         return Inertia::render('Admin/Users/Edit', [
             'user' => $user,
-            'supervisors' => $this->supervisors(),
         ]);
     }
 
@@ -99,17 +83,7 @@ class UserAdminController extends Controller
             'password' => ['required', Password::defaults()],
             'role' => ['required', Rule::enum(UserRole::class)],
             'account_status' => ['required', Rule::enum(AccountStatus::class)],
-            'supervisor_id' => [
-                'nullable',
-                Rule::exists('users', 'id')->where(fn ($q) => $q->where('role', UserRole::Supervisor)),
-            ],
         ]);
-
-        if ($data['role'] === UserRole::Employee->value && empty($data['supervisor_id'])) {
-            return back()->withErrors(['supervisor_id' => 'Assign a supervisor for employees.']);
-        }
-
-        $supervisorId = $data['role'] === UserRole::Employee->value ? $data['supervisor_id'] : null;
 
         $user = User::create([
             'name' => $data['name'],
@@ -117,14 +91,10 @@ class UserAdminController extends Controller
             'password' => $data['password'],
             'role' => $data['role'],
             'account_status' => $data['account_status'],
-            'supervisor_id' => $supervisorId,
+            'supervisor_id' => null,
         ]);
 
         AuditLogger::log($request->user()->id, 'user.created', $user, null, $request);
-
-        if ($user->isEmployee()) {
-            app(IpcrFormTemplateProvisioner::class)->provisionAssignedForEmployee($user);
-        }
 
         return to_route('admin.users.index')->with('status', 'User created.');
     }
@@ -143,11 +113,13 @@ class UserAdminController extends Controller
             ],
         ]);
 
-        if ($data['role'] === UserRole::Employee->value && empty($data['supervisor_id'])) {
-            return back()->withErrors(['supervisor_id' => 'Assign a supervisor for employees.']);
+        if ($data['role'] !== UserRole::Employee->value) {
+            $supervisorId = null;
+        } elseif ($request->exists('supervisor_id')) {
+            $supervisorId = $data['supervisor_id'] ?: null;
+        } else {
+            $supervisorId = $user->supervisor_id;
         }
-
-        $supervisorId = $data['role'] === UserRole::Employee->value ? $data['supervisor_id'] : null;
 
         $payload = [
             'name' => $data['name'],
@@ -161,12 +133,22 @@ class UserAdminController extends Controller
             $payload['password'] = $data['password'];
         }
 
+        $previousSupervisorId = $user->supervisor_id;
+
         $user->update($payload);
 
         AuditLogger::log($request->user()->id, 'user.updated', $user, null, $request);
 
-        if ($user->fresh()->isEmployee()) {
-            app(IpcrFormTemplateProvisioner::class)->provisionAssignedForEmployee($user->fresh());
+        $fresh = $user->fresh();
+        if (
+            $fresh->isEmployee()
+            && $fresh->supervisor_id
+            && (int) $fresh->supervisor_id !== (int) $previousSupervisorId
+        ) {
+            app(SupervisorTransferService::class)->reassignEmployeeToSupervisor(
+                $fresh,
+                (int) $fresh->supervisor_id,
+            );
         }
 
         return to_route('admin.users.index')->with('status', 'User updated.');
@@ -181,13 +163,5 @@ class UserAdminController extends Controller
         AuditLogger::log($request->user()->id, 'user.deleted', null, ['deleted_user_id' => $user->id], $request);
 
         return to_route('admin.users.index')->with('status', 'User removed.');
-    }
-
-    private function supervisors()
-    {
-        return User::query()
-            ->where('role', UserRole::Supervisor)
-            ->orderBy('name')
-            ->get(['id', 'name', 'email']);
     }
 }

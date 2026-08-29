@@ -79,6 +79,15 @@ class IpcrFormPreviewController extends Controller
         return IpcrSubmissionExportService::inlinePrint($submission);
     }
 
+    public function export(Request $request, IpcrSubmission $submission, string $format = 'xlsx'): StreamedResponse
+    {
+        abort_unless(in_array($format, ['xlsx', 'csv', 'pdf'], true), 404);
+
+        $submission = $this->authorizeSubmission($request, $submission);
+
+        return IpcrSubmissionExportService::download($submission, $format);
+    }
+
     public function printPdf(Request $request, IpcrSubmission $submission): StreamedResponse
     {
         $submission = $this->authorizeSubmission($request, $submission);

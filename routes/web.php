@@ -3,11 +3,12 @@
 use App\Http\Controllers\Admin\EmployeeRatingController;
 use App\Http\Controllers\Admin\FormTemplateController;
 use App\Http\Controllers\Admin\ReportController;
-use App\Http\Controllers\Admin\TransferRequestController;
+use App\Http\Controllers\Admin\SubmissionReviewController as AdminSubmissionReviewController;
 use App\Http\Controllers\Admin\UserAdminController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\Employee\AccomplishmentController;
 use App\Http\Controllers\Employee\CommitmentController;
+use App\Http\Controllers\Employee\FormPackageController;
 use App\Http\Controllers\Employee\FormAnswerController;
 use App\Http\Controllers\Employee\RatingHistoryExportController;
 use App\Http\Controllers\Employee\SubmissionExportController;
@@ -17,9 +18,6 @@ use App\Http\Controllers\LandingController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\RolePortalController;
-use App\Http\Controllers\Supervisor\SubmissionReviewController;
-use App\Http\Controllers\Supervisor\SubmissionReviewTransferController;
-use App\Http\Controllers\Supervisor\TransferRequestController as SupervisorTransferRequestController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', LandingController::class)->name('home');
@@ -38,6 +36,11 @@ Route::middleware(['auth', 'verified', 'active'])->group(function () {
         Route::patch('commitments/{commitment}', [CommitmentController::class, 'update'])->name('commitments.update');
         Route::patch('commitments/{commitment}/package', [CommitmentController::class, 'updateBatch'])->name('commitments.updateBatch');
         Route::delete('commitments/{commitment}', [CommitmentController::class, 'destroy'])->name('commitments.destroy');
+        Route::post('packages/from-template', [FormPackageController::class, 'fromTemplate'])->name('packages.from-template');
+        Route::post('packages', [FormPackageController::class, 'store'])->name('packages.store');
+        Route::get('packages/{submission}/edit', [FormPackageController::class, 'edit'])->name('packages.edit');
+        Route::patch('packages/{submission}', [FormPackageController::class, 'update'])->name('packages.update');
+        Route::delete('packages/{submission}', [FormPackageController::class, 'destroy'])->name('packages.destroy');
         Route::patch('form-answers', [FormAnswerController::class, 'update'])->name('form-answers.update');
         Route::post('accomplishments', [AccomplishmentController::class, 'store'])->name('accomplishments.store');
         Route::delete('accomplishments/{accomplishment}', [AccomplishmentController::class, 'destroy'])->name('accomplishments.destroy');
@@ -51,28 +54,33 @@ Route::middleware(['auth', 'verified', 'active'])->group(function () {
         Route::get('submissions/{submission}/print-pdf', [IpcrFormPreviewController::class, 'printPdf'])->name('submissions.print-pdf');
         Route::get('submissions/{submission}/print', [IpcrFormPreviewController::class, 'print'])->name('submissions.print');
         Route::post('submissions', [SubmissionController::class, 'store'])->name('submissions.store');
+        Route::post('submissions/{submission}/cancel', [SubmissionController::class, 'cancel'])->name('submissions.cancel');
     });
 
     Route::middleware('role:supervisor')->prefix('supervisor')->name('supervisor.')->group(function () {
-        Route::get('submissions/{submission}', [SubmissionReviewController::class, 'show'])->name('submissions.show');
         Route::get('submissions/{submission}/preview', [IpcrFormPreviewController::class, 'show'])->name('submissions.preview');
         Route::patch('submissions/{submission}/commitment-statement', [IpcrFormPreviewController::class, 'updateCommitment'])->name('submissions.commitment-statement');
         Route::get('submissions/{submission}/document', [IpcrFormPreviewController::class, 'document'])->name('submissions.document');
-        Route::get('submissions/{submission}/export/{format?}', [SubmissionReviewController::class, 'export'])
+        Route::get('submissions/{submission}/export/{format?}', [IpcrFormPreviewController::class, 'export'])
             ->where('format', 'xlsx|csv|pdf')
             ->name('submissions.export');
         Route::get('submissions/{submission}/print-pdf', [IpcrFormPreviewController::class, 'printPdf'])->name('submissions.print-pdf');
         Route::get('submissions/{submission}/print', [IpcrFormPreviewController::class, 'print'])->name('submissions.print');
-        Route::patch('submissions/{submission}', [SubmissionReviewController::class, 'update'])->name('submissions.update');
-        Route::post('submissions/{submission}/review-transfers', [SubmissionReviewTransferController::class, 'store'])->name('submissions.review-transfers.store');
-        Route::delete('review-transfers/{reviewTransfer}', [SubmissionReviewTransferController::class, 'destroy'])->name('review-transfers.destroy');
-        Route::patch('review-transfers/{reviewTransfer}/accept', [SubmissionReviewTransferController::class, 'accept'])->name('review-transfers.accept');
-        Route::patch('review-transfers/{reviewTransfer}/reject', [SubmissionReviewTransferController::class, 'reject'])->name('review-transfers.reject');
-        Route::post('transfer-requests', [SupervisorTransferRequestController::class, 'store'])->name('transfer-requests.store');
-        Route::delete('transfer-requests/{transferRequest}', [SupervisorTransferRequestController::class, 'destroy'])->name('transfer-requests.destroy');
+        Route::get('program-evaluations/create', [\App\Http\Controllers\Supervisor\ProgramEvaluationController::class, 'create'])->name('program-evaluations.create');
+        Route::post('program-evaluations', [\App\Http\Controllers\Supervisor\ProgramEvaluationController::class, 'store'])->name('program-evaluations.store');
+        Route::get('program-evaluations/{form}/edit', [\App\Http\Controllers\Supervisor\ProgramEvaluationController::class, 'edit'])->name('program-evaluations.edit');
+        Route::patch('program-evaluations/{form}', [\App\Http\Controllers\Supervisor\ProgramEvaluationController::class, 'update'])->name('program-evaluations.update');
+        Route::delete('program-evaluations/{form}', [\App\Http\Controllers\Supervisor\ProgramEvaluationController::class, 'destroy'])->name('program-evaluations.destroy');
+        Route::get('sto-monitoring/create', [\App\Http\Controllers\Supervisor\StoMonitoringController::class, 'create'])->name('sto-monitoring.create');
+        Route::post('sto-monitoring', [\App\Http\Controllers\Supervisor\StoMonitoringController::class, 'store'])->name('sto-monitoring.store');
+        Route::get('sto-monitoring/{stoMonitoringForm}/edit', [\App\Http\Controllers\Supervisor\StoMonitoringController::class, 'edit'])->name('sto-monitoring.edit');
+        Route::patch('sto-monitoring/{stoMonitoringForm}', [\App\Http\Controllers\Supervisor\StoMonitoringController::class, 'update'])->name('sto-monitoring.update');
+        Route::delete('sto-monitoring/{stoMonitoringForm}', [\App\Http\Controllers\Supervisor\StoMonitoringController::class, 'destroy'])->name('sto-monitoring.destroy');
     });
 
     Route::middleware('role:administrator')->prefix('admin')->name('admin.')->group(function () {
+        Route::get('submissions/{submission}', [AdminSubmissionReviewController::class, 'show'])->name('submissions.show');
+        Route::patch('submissions/{submission}', [AdminSubmissionReviewController::class, 'update'])->name('submissions.update');
         Route::get('submissions/{submission}/preview', [IpcrFormPreviewController::class, 'show'])->name('submissions.preview');
         Route::patch('submissions/{submission}/commitment-statement', [IpcrFormPreviewController::class, 'updateCommitment'])->name('submissions.commitment-statement');
         Route::get('submissions/{submission}/document', [IpcrFormPreviewController::class, 'document'])->name('submissions.document');
@@ -101,14 +109,14 @@ Route::middleware(['auth', 'verified', 'active'])->group(function () {
         Route::get('forms/{form}', [FormTemplateController::class, 'show'])->name('forms.show');
         Route::get('forms/{form}/edit', [FormTemplateController::class, 'edit'])->name('forms.edit');
         Route::patch('forms/{form}', [FormTemplateController::class, 'update'])->name('forms.update');
-        Route::post('forms/{form}/assign', [FormTemplateController::class, 'assign'])->name('forms.assign');
         Route::delete('forms/{form}', [FormTemplateController::class, 'destroy'])->name('forms.destroy');
         Route::get('reports/ratings', [ReportController::class, 'ratings'])->name('reports.ratings');
         Route::get('reports/submissions/{submission}', [ReportController::class, 'showSubmission'])->name('reports.submissions.show');
         Route::get('reports/users.csv', [ReportController::class, 'usersCsv'])->name('reports.users');
-        Route::get('transfer-requests', [TransferRequestController::class, 'index'])->name('transfer-requests.index');
-        Route::patch('transfer-requests/{transferRequest}/approve', [TransferRequestController::class, 'approve'])->name('transfer-requests.approve');
-        Route::patch('transfer-requests/{transferRequest}/reject', [TransferRequestController::class, 'reject'])->name('transfer-requests.reject');
+        Route::get('program-evaluations/{form}', [\App\Http\Controllers\Admin\RegisterReportReviewController::class, 'showProgram'])->name('program-evaluations.show');
+        Route::patch('program-evaluations/{form}', [\App\Http\Controllers\Admin\RegisterReportReviewController::class, 'updateProgram'])->name('program-evaluations.update');
+        Route::get('sto-monitoring/{stoMonitoringForm}', [\App\Http\Controllers\Admin\RegisterReportReviewController::class, 'showSto'])->name('sto-monitoring.show');
+        Route::patch('sto-monitoring/{stoMonitoringForm}', [\App\Http\Controllers\Admin\RegisterReportReviewController::class, 'updateSto'])->name('sto-monitoring.update');
     });
 
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');

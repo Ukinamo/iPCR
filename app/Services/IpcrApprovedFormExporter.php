@@ -152,10 +152,7 @@ final class IpcrApprovedFormExporter
             $sheet->removeRow($dataAnchorRow, $placeholderRows);
         }
 
-        $commitments = $submission->commitments->sortBy([
-            fn (Commitment $c) => $c->function_type === 'core' ? 0 : 1,
-            fn (Commitment $c) => $c->id,
-        ]);
+        $commitments = \App\Support\IpcrFunctionGroups::ordered($submission->commitments);
 
         $core = $commitments->where('function_type', 'core');
         $strategic = $commitments->where('function_type', 'strategic');
@@ -212,7 +209,7 @@ final class IpcrApprovedFormExporter
      */
     private static function countSectionRows(Collection $commitments): int
     {
-        $groups = self::groupCommitmentsByTitle($commitments);
+        $groups = \App\Support\IpcrFunctionGroups::consecutive($commitments);
         $rows = max(0, count($groups) - 1);
 
         foreach ($groups as $group) {
@@ -222,27 +219,6 @@ final class IpcrApprovedFormExporter
         }
 
         return $rows;
-    }
-
-    /**
-     * @param  Collection<int, Commitment>  $commitments
-     * @return list<list<Commitment>>
-     */
-    private static function groupCommitmentsByTitle(Collection $commitments): array
-    {
-        $order = [];
-        $groups = [];
-
-        foreach ($commitments as $commitment) {
-            $key = self::functionTitleKey($commitment);
-            if (! array_key_exists($key, $groups)) {
-                $order[] = $key;
-                $groups[$key] = [];
-            }
-            $groups[$key][] = $commitment;
-        }
-
-        return array_map(fn (string $key) => $groups[$key], $order);
     }
 
     /**
@@ -271,7 +247,7 @@ final class IpcrApprovedFormExporter
      */
     private static function writeCommitmentGroups(Worksheet $sheet, int $row, Collection $commitments, Worksheet $styleReference): int
     {
-        $groups = self::groupCommitmentsByTitle($commitments);
+        $groups = \App\Support\IpcrFunctionGroups::consecutive($commitments);
 
         foreach ($groups as $index => $group) {
             if ($index > 0) {
@@ -391,8 +367,8 @@ final class IpcrApprovedFormExporter
         self::setWholeNum($sheet, self::COL_Q3_ACTUAL, $start, $c->rating_q3_actual);
         self::setWholeNum($sheet, self::COL_Q4_TARGET, $start, $c->rating_q4_target);
         self::setWholeNum($sheet, self::COL_Q4_ACTUAL, $start, $c->rating_q4_actual);
-        self::setNum($sheet, self::COL_TOTAL_TARGET, $start, $c->rating_target_total);
-        self::setNum($sheet, self::COL_TOTAL_ACTUAL, $start, $c->rating_actual_total);
+        self::setWholeNum($sheet, self::COL_TOTAL_TARGET, $start, $c->rating_target_total);
+        self::setWholeNum($sheet, self::COL_TOTAL_ACTUAL, $start, $c->rating_actual_total);
 
         if ($c->rating_percent !== null) {
             $sheet->setCellValue(self::cell(self::COL_PERCENT, $start), (float) $c->rating_percent);
@@ -407,7 +383,7 @@ final class IpcrApprovedFormExporter
         if ($c->rating_timeliness !== null) {
             $sheet->setCellValue(self::cell(self::COL_TIMELINESS, $start), (int) $c->rating_timeliness);
         }
-        if ($c->weight !== null && $c->rating_average !== null) {
+        if (IpcrFormRatingCalculator::isRateableRow($c) && $c->rating_average !== null) {
             $sheet->setCellValue(self::cell(self::COL_AVERAGE, $start), (float) $c->rating_average);
         }
 
@@ -425,7 +401,7 @@ final class IpcrApprovedFormExporter
 
     private static function weightedRemarkScore(Commitment $c): ?float
     {
-        if ($c->weight === null) {
+        if (! IpcrFormRatingCalculator::isRateableRow($c)) {
             return null;
         }
 
@@ -434,10 +410,14 @@ final class IpcrApprovedFormExporter
         }
 
         if ($c->rating_average !== null) {
-            return IpcrFormRatingCalculator::weightedFromAverageAndWeight(
-                (float) $c->rating_average,
-                (float) $c->weight,
-            );
+            if ($c->weight !== null) {
+                return IpcrFormRatingCalculator::weightedFromAverageAndWeight(
+                    (float) $c->rating_average,
+                    (float) $c->weight,
+                );
+            }
+
+            return round((float) $c->rating_average, 2);
         }
 
         return null;
@@ -458,8 +438,8 @@ final class IpcrApprovedFormExporter
             $sheet->setCellValue(self::cell(self::COL_PERCENT, $row), $pct);
         }
 
-        $avgSum = round((float) $commitments->sum(fn (Commitment $c) => $c->weight !== null ? ($c->rating_average ?? 0) : 0), 2);
-        if ($commitments->contains(fn (Commitment $c) => $c->weight !== null && $c->rating_average !== null)) {
+        $avgSum = round((float) $commitments->sum(fn (Commitment $c) => IpcrFormRatingCalculator::isRateableRow($c) ? ($c->rating_average ?? 0) : 0), 2);
+        if ($commitments->contains(fn (Commitment $c) => IpcrFormRatingCalculator::isRateableRow($c) && $c->rating_average !== null)) {
             $sheet->setCellValue(self::cell(self::COL_AVERAGE, $row), $avgSum);
         }
 

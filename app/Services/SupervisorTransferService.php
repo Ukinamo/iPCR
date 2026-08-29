@@ -109,10 +109,6 @@ class SupervisorTransferService
             ]);
         });
 
-        app(IpcrFormTemplateProvisioner::class)->provisionAssignedForEmployee(
-            $transferRequest->employee()->firstOrFail()
-        );
-
         $transferRequest->load(['employee', 'requestedBy', 'fromSupervisor', 'toSupervisor', 'reviewedBy']);
 
         $this->notifyTransferParties(new TransferRequestApprovedNotification($transferRequest));
@@ -139,11 +135,29 @@ class SupervisorTransferService
         AuditLogger::log($admin->id, 'supervisor.transfer.rejected', $transferRequest, null, request());
     }
 
+    public function reassignEmployeeToSupervisor(User $employee, int $supervisorId): void
+    {
+        $employee->update([
+            'supervisor_id' => $supervisorId,
+        ]);
+
+        IpcrSubmission::query()
+            ->where('employee_id', $employee->id)
+            ->whereIn('status', [
+                SubmissionStatus::Pending,
+                SubmissionStatus::InReview,
+                SubmissionStatus::Returned,
+            ])
+            ->update([
+                'supervisor_id' => $supervisorId,
+            ]);
+    }
+
     public function notifySubmissionSubmitted(IpcrSubmission $submission): void
     {
         $submission->loadMissing(['employee', 'supervisor']);
 
-        $submission->supervisor?->notify(new IpcrSubmittedForReviewNotification($submission));
+        $this->notifyAdministrators(new IpcrSubmittedForReviewNotification($submission));
     }
 
     public function notifyReviewCompleted(IpcrSubmission $submission, string $action): void

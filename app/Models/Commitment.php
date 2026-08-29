@@ -21,12 +21,18 @@ class Commitment extends Model
         'title',
         'description',
         'function_type',
+        'sort_order',
+        'function_group',
         'weight',
         'annual_office_target',
         'individual_annual_targets',
         'progress',
         'rating_actual_total',
         'rating_target_total',
+        'rating_q1_target',
+        'rating_q1_actual',
+        'rating_q2_target',
+        'rating_q2_actual',
         'rating_q3_target',
         'rating_q3_actual',
         'rating_q4_target',
@@ -45,13 +51,19 @@ class Commitment extends Model
     {
         return [
             'status' => CommitmentStatus::class,
+            'sort_order' => 'integer',
+            'function_group' => 'integer',
             'weight' => 'decimal:2',
-            'rating_actual_total' => 'decimal:4',
-            'rating_target_total' => 'decimal:4',
-            'rating_q3_target' => 'decimal:4',
-            'rating_q3_actual' => 'decimal:4',
-            'rating_q4_target' => 'decimal:4',
-            'rating_q4_actual' => 'decimal:4',
+            'rating_actual_total' => 'integer',
+            'rating_target_total' => 'integer',
+            'rating_q1_target' => 'integer',
+            'rating_q1_actual' => 'integer',
+            'rating_q2_target' => 'integer',
+            'rating_q2_actual' => 'integer',
+            'rating_q3_target' => 'integer',
+            'rating_q3_actual' => 'integer',
+            'rating_q4_target' => 'integer',
+            'rating_q4_actual' => 'integer',
             'rating_percent' => 'decimal:6',
             'rating_average' => 'decimal:4',
             'rating_weighted' => 'decimal:6',
@@ -90,7 +102,7 @@ class Commitment extends Model
     {
         return $query
             ->orderByRaw("CASE WHEN function_type = 'core' THEN 0 ELSE 1 END")
-            ->orderByRaw('COALESCE((SELECT sort_order FROM ipcr_form_template_items WHERE ipcr_form_template_items.id = commitments.ipcr_form_template_item_id), 9999)')
+            ->orderBy('sort_order')
             ->orderBy('id');
     }
 }

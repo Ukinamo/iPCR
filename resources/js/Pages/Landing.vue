@@ -29,10 +29,10 @@ const slides = [
         title: 'What I-PERFORM Does',
         highlight: 'for your office',
         description:
-            'I-PERFORM digitizes the full IPCR cycle—from setting targets at the start of the period through supervisor review, approval, and printable official forms.',
+            'I-PERFORM digitizes the full IPCR cycle—from setting targets at the start of the period through administrator review, approval, and printable official forms.',
         bullets: [
             'Employees encode core and strategic commitments with weights',
-            'Supervisors rate quality, efficiency, and timeliness (Q/E/T)',
+            'Administrators review employee ratings and approve or reject packages',
             'Approved records export to Excel, PDF, or CSV',
         ],
         accent: 'from-emerald-600 to-teal-700',
@@ -43,7 +43,7 @@ const slides = [
         title: 'Plan, Track, and Submit',
         highlight: 'your IPCR package',
         description:
-            'Create commitment packages per evaluation period, attach evidence for accomplishments, and submit when ready for supervisor review.',
+            'Create commitment packages per evaluation period, attach evidence for accomplishments, and submit when ready for administrator review.',
         bullets: [
             'Draft and edit commitments before submission',
             'View approved history and overall ratings',
@@ -57,10 +57,10 @@ const slides = [
         title: 'Review, Rate, and Report',
         highlight: 'with transparency',
         description:
-            'Supervisors review submitted packages, enter ratings, return items for revision, or approve. Administrators access reports, analytics, and user management.',
+            'Administrators review submitted packages, approve or reject them, and manage users. Supervisors follow their team’s progress.',
         bullets: [
-            'Structured review workflow with feedback',
-            'Transfer review packages between supervisors',
+            'Administrator review workflow with feedback',
+            'User management, pending registrations, and roles',
             'Admin dashboards, ratings reports, and exports',
         ],
         accent: 'from-amber-500 to-orange-600',

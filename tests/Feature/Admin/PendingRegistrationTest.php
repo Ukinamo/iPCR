@@ -12,25 +12,22 @@ class PendingRegistrationTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_admin_can_approve_pending_registration_with_supervisor(): void
+    public function test_admin_can_approve_pending_registration(): void
     {
         $admin = User::factory()->create(['role' => UserRole::Administrator]);
-        $supervisor = User::factory()->create(['role' => UserRole::Supervisor]);
         $pending = User::factory()->create([
             'role' => UserRole::Employee,
             'account_status' => AccountStatus::Pending,
             'supervisor_id' => null,
         ]);
 
-        $response = $this->actingAs($admin)->patch(route('admin.users.approve', $pending), [
-            'supervisor_id' => $supervisor->id,
-        ]);
+        $response = $this->actingAs($admin)->patch(route('admin.users.approve', $pending));
 
         $response->assertRedirect(route('admin.users.pending'));
         $pending->refresh();
 
         $this->assertSame(AccountStatus::Active, $pending->account_status);
-        $this->assertSame($supervisor->id, $pending->supervisor_id);
+        $this->assertNull($pending->supervisor_id);
     }
 
     public function test_admin_can_reject_pending_registration(): void

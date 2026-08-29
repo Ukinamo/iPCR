@@ -116,6 +116,7 @@ function addFunctionEntry(type) {
         enabled: true,
         function_type: type,
         title: '',
+        _uid: `e-${type}-${Date.now()}-${Math.random()}`,
         items: [{
             _uid: Date.now() + Math.random(),
             id: null,
@@ -254,7 +255,7 @@ function isDropTarget(entryIdx, itemIdx) {
                                 </span>
                             </td>
                         </tr>
-                        <template v-for="({ entry, idx: eIdx }) in section.list" :key="section.type + '-' + eIdx">
+                        <template v-for="({ entry, idx: eIdx }) in section.list" :key="entry._uid || (section.type + '-' + eIdx)">
                             <template v-for="(item, iIdx) in entry.items" :key="item._uid ?? item.id ?? iIdx">
                                 <tr
                                     :class="[

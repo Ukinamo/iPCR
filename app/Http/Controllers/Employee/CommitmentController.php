@@ -26,11 +26,12 @@ class CommitmentController extends Controller
 
         $siblings = $this->siblingsFor($commitment);
 
-        $submission = IpcrSubmission::query()
-            ->where('employee_id', $commitment->user_id)
-            ->where('evaluation_year', $commitment->evaluation_year)
-            ->where('evaluation_quarter', $commitment->evaluation_quarter)
-            ->first();
+        $submission = $commitment->ipcr_submission_id
+            ? IpcrSubmission::query()->find($commitment->ipcr_submission_id)
+            : IpcrSubmission::query()
+                ->where('employee_id', $commitment->user_id)
+                ->where('batch_id', $commitment->batch_id)
+                ->first();
 
         if ($submission?->status === SubmissionStatus::Approved) {
             return redirect()->route('dashboard');
@@ -40,8 +41,8 @@ class CommitmentController extends Controller
         $totalEvidence = (int) $siblings->sum(fn ($c) => $c->accomplishments->count());
 
         $functionTitles = $siblings
-            ->map(fn ($c) => ['function_type' => $c->function_type, 'title' => $c->title])
-            ->unique(fn ($r) => $r['function_type'].'|'.$r['title'])
+            ->map(fn ($c) => ['function_type' => $c->function_type, 'title' => $c->title, 'function_group' => $c->function_group])
+            ->unique(fn ($r) => $r['function_type'].'|'.$r['function_group'].'|'.$r['title'])
             ->values();
 
         $weightSummary = CommitmentWeightRules::summaryForEmployee(
@@ -67,8 +68,10 @@ class CommitmentController extends Controller
             'weightSummary' => $weightSummary,
             'submission' => $submission ? [
                 'id' => $submission->id,
+                'title' => $submission->title,
                 'status' => $submission->status->value,
                 'supervisor_feedback' => $submission->supervisor_feedback,
+                'included_quarters' => \App\Support\IpcrIncludedQuarters::existingOrDefault($submission->included_quarters),
             ] : null,
         ]);
     }

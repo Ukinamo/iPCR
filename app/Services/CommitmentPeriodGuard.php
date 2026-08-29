@@ -26,7 +26,7 @@ class CommitmentPeriodGuard
         }
 
         if ($submission?->status === SubmissionStatus::InReview) {
-            return 'Your IPCR package is with your supervisor for review. Wait until it is returned or approved before adding commitments.';
+            return 'Your IPCR package is with an administrator for review. Wait until it is returned or approved before adding commitments.';
         }
 
         $hasPendingReview = Commitment::query()
@@ -37,7 +37,7 @@ class CommitmentPeriodGuard
             ->exists();
 
         if ($hasPendingReview) {
-            return 'You have commitments pending supervisor review. You cannot add new ones until the package is returned or approved.';
+            return 'You have commitments pending administrator review. You cannot add new ones until the package is returned or approved.';
         }
 
         return null;

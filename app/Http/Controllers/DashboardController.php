@@ -2,21 +2,18 @@
 
 namespace App\Http\Controllers;
 
-use App\Enums\CommitmentStatus;
-use App\Enums\ReviewTransferRequestStatus;
+use App\Enums\RegisterReportStatus;
 use App\Enums\SubmissionStatus;
 use App\Enums\UserRole;
-use App\Models\Commitment;
-use App\Enums\TransferRequestStatus;
+use App\Models\IpcrFormTemplate;
 use App\Models\IpcrSubmission;
-use App\Models\SubmissionReviewTransferRequest;
-use App\Models\SupervisorTransferRequest;
+use App\Models\ProgramEvaluationForm;
+use App\Models\StoMonitoringForm;
 use App\Models\User;
 use App\Http\Controllers\Admin\FormTemplateController;
 use App\Http\Controllers\Admin\ReportController;
 use App\Services\AdminAnalyticsService;
 use App\Services\CommitmentWeightRules;
-use App\Services\IpcrFormTemplateProvisioner;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -40,15 +37,37 @@ class DashboardController extends Controller
         $year = (int) now()->year;
         $quarter = (int) ceil(now()->month / 3);
 
-        app(IpcrFormTemplateProvisioner::class)->provisionAssignedForEmployee($user);
+        $packages = IpcrSubmission::query()
+            ->with(['commitments' => fn ($q) => $q->inFormOrder()->with('accomplishments')])
+            ->where('employee_id', $user->id)
+            ->where('status', '!=', SubmissionStatus::Approved)
+            ->orderByDesc('id')
+            ->get()
+            ->map(function (IpcrSubmission $package) use ($user) {
+                $commitments = $package->commitments;
+                $totals = CommitmentWeightRules::totalsFromRows($commitments);
+                $editable = in_array($package->status, [SubmissionStatus::Pending, SubmissionStatus::Returned], true);
 
-        $commitments = Commitment::query()
-            ->where('user_id', $user->id)
-            ->where('evaluation_year', $year)
-            ->where('evaluation_quarter', $quarter)
-            ->with('accomplishments')
-            ->inFormOrder()
-            ->get();
+                return [
+                    ...$package->toArray(),
+                    'period_label' => \App\Support\IpcrIncludedQuarters::periodLabel(
+                        (int) $package->evaluation_year,
+                        $package->included_quarters,
+                    ),
+                    'weight_summary' => [
+                        ...$totals,
+                        'meets_submit_requirement' => CommitmentWeightRules::meetsSpmsSplit($totals['core'], $totals['strategic']),
+                    ],
+                    'can_edit' => $editable,
+                    'can_delete' => $editable,
+                    'can_submit' => $editable
+                        && CommitmentWeightRules::meetsSpmsSplit($totals['core'], $totals['strategic'])
+                        && $user->supervisor_id !== null,
+                    'open_commitment_id' => $commitments->first()?->id,
+                ];
+            })
+            ->values();
+
         $approvedHistory = IpcrSubmission::query()
             ->where('employee_id', $user->id)
             ->where('status', SubmissionStatus::Approved)
@@ -58,174 +77,84 @@ class DashboardController extends Controller
             ->take(20)
             ->get();
 
-        $packageStatuses = Commitment::query()
-            ->where('user_id', $user->id)
-            ->get(['evaluation_year', 'evaluation_quarter', 'status'])
-            ->groupBy(fn (Commitment $c) => $c->evaluation_year.'-'.$c->evaluation_quarter)
-            ->map(function ($rows) {
-                if ($rows->contains(fn (Commitment $c) => $c->status === CommitmentStatus::InReview)) {
-                    return 'in_review';
-                }
-                if ($rows->contains(fn (Commitment $c) => $c->status === CommitmentStatus::Approved)) {
-                    return 'approved';
-                }
-                if ($rows->contains(fn (Commitment $c) => $c->status === CommitmentStatus::Returned)) {
-                    return 'returned';
-                }
-
-                return 'draft';
-            });
-
-        $activeCommitments = $packageStatuses->filter(fn ($status) => in_array($status, ['draft', 'returned'], true))->count();
-        $pendingReview = $packageStatuses->filter(fn ($status) => $status === 'in_review')->count();
-        $approved = $packageStatuses->filter(fn ($status) => $status === 'approved')->count();
+        $packageStatuses = IpcrSubmission::query()
+            ->where('employee_id', $user->id)
+            ->get(['status']);
+        $pendingReview = $packageStatuses->where('status', SubmissionStatus::InReview)->count();
+        $approved = $packageStatuses->where('status', SubmissionStatus::Approved)->count();
+        $active = $packageStatuses->filter(fn ($row) => in_array($row->status, [SubmissionStatus::Pending, SubmissionStatus::Returned], true))->count();
         $approvalRate = $packageStatuses->isEmpty()
             ? 0
             : (int) round(($approved / $packageStatuses->count()) * 100);
 
-        $submission = IpcrSubmission::query()
-            ->with('commitments')
-            ->where('employee_id', $user->id)
-            ->where('evaluation_year', $year)
-            ->where('evaluation_quarter', $quarter)
-            ->first();
+        $availableTemplates = IpcrFormTemplate::query()
+            ->with('items')
+            ->withCount('items')
+            ->orderByDesc('evaluation_year')
+            ->orderByDesc('evaluation_quarter')
+            ->orderByDesc('id')
+            ->get()
+            ->map(function ($template) {
+                $totals = CommitmentWeightRules::totalsFromRows($template->items);
 
-        $weightSummary = CommitmentWeightRules::summaryForEmployee($user->id, $year, $quarter);
+                return [
+                    'id' => $template->id,
+                    'title' => $template->title,
+                    'period_label' => $template->period_label,
+                    'items_count' => $template->items_count,
+                    'weight_summary' => $totals,
+                ];
+            });
 
-        $hasAssignedForm = $commitments->isNotEmpty();
-        $hasAccomplishments = $commitments->contains(function ($c) {
-            return $c->rating_q3_actual !== null
-                || $c->rating_q4_actual !== null
-                || $c->rating_actual_total !== null;
-        });
-        $hasDraftOrReturned = $commitments->contains(fn ($c) => in_array($c->status, [CommitmentStatus::Draft, CommitmentStatus::Returned], true));
-        $submissionAllowsSubmit = ! $submission || $submission->status === SubmissionStatus::Returned;
-        $canSubmitPeriod = $hasDraftOrReturned
-            && $hasAssignedForm
-            && $hasAccomplishments
-            && $submissionAllowsSubmit
-            && $weightSummary['meets_submit_requirement']
-            && $user->supervisor_id !== null;
-
-        $packageLocked = $submission && in_array($submission->status, [SubmissionStatus::InReview, SubmissionStatus::Approved], true);
-        $canAnswerForm = $hasAssignedForm && $hasDraftOrReturned && ! $packageLocked;
-        $addCommitmentBlockedReason = $hasAssignedForm
-            ? null
-            : ($user->supervisor_id === null
-                ? 'Ask your administrator to assign a supervisor, then they will assign an IPCR form for you to complete.'
-                : 'Waiting for an administrator to create the IPCR form and assign it to your supervisor.');
-        $submitSteps = $submission && $submission->status === SubmissionStatus::Approved
-            ? []
-            : $this->submitStepsForEmployee(
-                $user,
-                $hasAssignedForm,
-                $hasAccomplishments,
-                $packageLocked,
-                $weightSummary,
-                $submissionAllowsSubmit,
-                $submission,
-            );
+        $blankWeightSummary = [
+            'core' => 0,
+            'strategic' => 0,
+            'total' => 0,
+            'core_remaining' => CommitmentWeightRules::CORE_CAP,
+            'strategic_remaining' => CommitmentWeightRules::STRATEGIC_CAP,
+            'core_cap' => CommitmentWeightRules::CORE_CAP,
+            'strategic_cap' => CommitmentWeightRules::STRATEGIC_CAP,
+            'meets_submit_requirement' => false,
+        ];
 
         return Inertia::render('Employee/Dashboard', [
             'stats' => [
-                'activeCommitments' => $activeCommitments,
+                'activeCommitments' => $active,
                 'pendingReview' => $pendingReview,
                 'approvalRate' => $approvalRate,
             ],
-            'commitments' => $commitments,
+            'packages' => $packages,
+            'availableTemplates' => $availableTemplates,
             'approvedHistory' => $approvedHistory,
             'period' => [
                 'label' => 'Q'.$quarter.' '.$year,
                 'year' => $year,
                 'quarter' => $quarter,
             ],
-            'submission' => $submission,
-            'weightSummary' => $weightSummary,
-            'canSubmitPeriod' => $canSubmitPeriod,
-            'canAnswerForm' => $canAnswerForm,
-            'hasAssignedForm' => $hasAssignedForm,
-            'addCommitmentBlockedReason' => $addCommitmentBlockedReason,
-            'submitSteps' => $submitSteps,
+            'formWeightSummary' => $blankWeightSummary,
             'reminder' => 'The Q'.$quarter.' '.$year.' evaluation period closes on the last day of the quarter. Submit accomplishments and supporting documents before the deadline.',
         ]);
     }
 
-    /**
-     * Ordered checklist so employees see what to complete before "Submit for supervisor review".
-     *
-     * @return list<array{key: string, title: string, detail: ?string, done: bool}>
-     */
-    private function submitStepsForEmployee(
-        User $user,
-        bool $hasAssignedForm,
-        bool $hasAccomplishments,
-        bool $packageLocked,
-        array $weightSummary,
-        bool $submissionAllowsSubmit,
-        ?IpcrSubmission $submission,
-    ): array {
-        $supervisorOk = $user->supervisor_id !== null;
-        $formStepDone = $hasAssignedForm || $packageLocked;
-        $answersDone = ($hasAccomplishments && $weightSummary['meets_submit_requirement']) || $packageLocked;
-        $packageStepDone = $submissionAllowsSubmit;
-
-        $packageDetail = null;
-        if ($submission?->status === SubmissionStatus::InReview) {
-            $packageDetail = 'Your IPCR package is already with your supervisor. Wait for approval or for it to be returned before you can submit again.';
-        } elseif ($submission?->status === SubmissionStatus::Pending) {
-            $packageDetail = 'Finish the steps above, then click Submit for supervisor review.';
-        }
-
-        return [
-            [
-                'key' => 'supervisor',
-                'title' => 'Be linked to a supervisor',
-                'detail' => $supervisorOk
-                    ? null
-                    : 'Ask your administrator to assign a supervisor to your account (User Management). You cannot receive a form without this.',
-                'done' => $supervisorOk,
-            ],
-            [
-                'key' => 'form',
-                'title' => 'Wait for the assigned IPCR form',
-                'detail' => $formStepDone
-                    ? 'Your administrator assigned the form your team will use for this period.'
-                    : 'An administrator must create the IPCR form (Function, Indicators, Weight, Targets) and assign it to your supervisor.',
-                'done' => $formStepDone,
-            ],
-            [
-                'key' => 'answers',
-                'title' => 'Fill accomplishments (rating, average, and remarks auto-compute)',
-                'detail' => $answersDone
-                    ? ($packageLocked ? 'Your answers are in the system for this period.' : null)
-                    : 'Enter accomplishments on the form. Rating, average, and remarks (weight × average) compute automatically.',
-                'done' => $answersDone,
-            ],
-            [
-                'key' => 'submit',
-                'title' => 'Send package for supervisor review',
-                'detail' => $packageDetail,
-                'done' => $packageStepDone,
-            ],
-        ];
-    }
-
     private function supervisorDashboard(User $user): Response
     {
-        $teamIds = User::query()
-            ->where('supervisor_id', $user->id)
-            ->where('role', UserRole::Employee)
-            ->pluck('id');
-
         $submissions = IpcrSubmission::query()
             ->with(['employee', 'commitments.accomplishments'])
             ->where('supervisor_id', $user->id)
+            ->where('status', '!=', SubmissionStatus::Approved)
             ->orderByDesc('submitted_at')
             ->orderByDesc('id')
-            ->take(50)
             ->get();
 
-        $approved = $submissions->where('status', SubmissionStatus::Approved)->count();
+        $approvedSubmissions = IpcrSubmission::query()
+            ->with(['employee:id,name,email', 'commitments'])
+            ->where('supervisor_id', $user->id)
+            ->where('status', SubmissionStatus::Approved)
+            ->orderByDesc('reviewed_at')
+            ->orderByDesc('id')
+            ->get();
+
+        $approved = $approvedSubmissions->count();
         $needsReview = $submissions->where('status', SubmissionStatus::InReview)->count();
         $pending = $submissions
             ->filter(fn ($s) => in_array($s->status, [SubmissionStatus::Pending, SubmissionStatus::Returned], true))
@@ -239,41 +168,46 @@ class DashboardController extends Controller
 
         return Inertia::render('Supervisor/Dashboard', [
             'stats' => [
-                'teamMembers' => $teamIds->count(),
                 'approved' => $approved,
                 'pendingReview' => $needsReview,
                 'otherActive' => $pending,
                 'averageRating' => round($avgRating, 1),
             ],
             'submissions' => $submissions,
-            'teamMembers' => User::query()
+            'approvedSubmissions' => $approvedSubmissions,
+            'programEvaluationForms' => ProgramEvaluationForm::query()
                 ->where('supervisor_id', $user->id)
-                ->where('role', UserRole::Employee)
-                ->orderBy('name')
-                ->get(['id', 'name', 'email']),
-            'supervisors' => User::query()
-                ->where('role', UserRole::Supervisor)
-                ->where('id', '!=', $user->id)
-                ->orderBy('name')
-                ->get(['id', 'name', 'email']),
-            'transferRequests' => SupervisorTransferRequest::query()
-                ->with(['employee:id,name,email', 'toSupervisor:id,name'])
-                ->where('requested_by_id', $user->id)
-                ->where('status', TransferRequestStatus::Pending)
-                ->orderByDesc('created_at')
-                ->get(),
-            'incomingReviewTransfers' => SubmissionReviewTransferRequest::query()
-                ->with(['submission.employee:id,name', 'requestedBy:id,name', 'fromSupervisor:id,name', 'toSupervisor:id,name'])
-                ->where('to_supervisor_id', $user->id)
-                ->where('status', ReviewTransferRequestStatus::Pending)
-                ->orderByDesc('created_at')
-                ->get(),
-            'outgoingReviewTransfers' => SubmissionReviewTransferRequest::query()
-                ->with(['submission.employee:id,name', 'toSupervisor:id,name'])
-                ->where('requested_by_id', $user->id)
-                ->where('status', ReviewTransferRequestStatus::Pending)
-                ->orderByDesc('created_at')
-                ->get(),
+                ->withCount('entries')
+                ->orderByDesc('updated_at')
+                ->get()
+                ->map(fn (ProgramEvaluationForm $form) => [
+                    'id' => $form->id,
+                    'title' => $form->title,
+                    'office_name' => $form->office_name,
+                    'evaluation_year' => $form->evaluation_year,
+                    'entries_count' => $form->entries_count,
+                    'status' => $form->statusValue(),
+                    'can_edit' => $form->supervisorCanEdit(),
+                    'review_notes' => $form->review_notes,
+                ]),
+            'stoMonitoringForms' => StoMonitoringForm::query()
+                ->where('supervisor_id', $user->id)
+                ->withCount('entries')
+                ->orderByDesc('updated_at')
+                ->get()
+                ->map(function (StoMonitoringForm $form) {
+                    return [
+                        'id' => $form->id,
+                        'report_type' => $form->report_type->value,
+                        'title' => $form->title,
+                        'office_name' => $form->office_name,
+                        'evaluation_year' => $form->evaluation_year,
+                        'entries_count' => $form->entries_count,
+                        'status' => $form->statusValue(),
+                        'can_edit' => $form->supervisorCanEdit(),
+                        'review_notes' => $form->review_notes,
+                    ];
+                }),
         ]);
     }
 
@@ -289,6 +223,16 @@ class DashboardController extends Controller
             'employees' => User::where('role', UserRole::Employee)->count(),
         ];
 
+        $pendingReviews = IpcrSubmission::query()
+            ->with(['employee:id,name,email', 'commitments'])
+            ->where('status', SubmissionStatus::InReview)
+            ->orderByDesc('submitted_at')
+            ->orderByDesc('id')
+            ->take(50)
+            ->get();
+
+        $pendingRegisterReports = $this->pendingRegisterReports();
+
         return Inertia::render('Admin/Dashboard', [
             'stats' => $stats,
             'users' => $users,
@@ -296,23 +240,114 @@ class DashboardController extends Controller
             'approvedRatings' => app(ReportController::class)->approvedSubmissionsList(),
             'reviewMonths' => app(ReportController::class)->approvedReviewMonths(),
             'analytics' => app(AdminAnalyticsService::class)->snapshot(),
-            'pendingTransferCount' => SupervisorTransferRequest::where('status', TransferRequestStatus::Pending)->count(),
-            'pendingTransferRequests' => SupervisorTransferRequest::query()
-                ->with(['employee:id,name,email', 'requestedBy:id,name,email', 'fromSupervisor:id,name', 'toSupervisor:id,name'])
-                ->where('status', TransferRequestStatus::Pending)
-                ->orderBy('created_at')
-                ->get(),
-            'recentTransferRequests' => SupervisorTransferRequest::query()
-                ->with(['employee:id,name,email', 'requestedBy:id,name,email', 'fromSupervisor:id,name', 'toSupervisor:id,name', 'reviewedBy:id,name'])
-                ->whereIn('status', [TransferRequestStatus::Approved, TransferRequestStatus::Rejected, TransferRequestStatus::Cancelled])
-                ->orderByDesc('reviewed_at')
-                ->orderByDesc('updated_at')
-                ->take(20)
-                ->get(),
+            'pendingReviews' => $pendingReviews,
+            'pendingReviewCount' => IpcrSubmission::query()->where('status', SubmissionStatus::InReview)->count(),
+            'pendingRegisterReports' => $pendingRegisterReports,
+            'pendingRegisterReportCount' => count($pendingRegisterReports),
+            'approvedRegisterReports' => $this->approvedRegisterReports(),
             'supervisors' => User::query()
                 ->where('role', UserRole::Supervisor)
                 ->orderBy('name')
                 ->get(['id', 'name', 'email']),
         ]);
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function pendingRegisterReports(): array
+    {
+        $programs = ProgramEvaluationForm::query()
+            ->with('supervisor:id,name,email')
+            ->withCount('entries')
+            ->where('status', RegisterReportStatus::InReview)
+            ->orderByDesc('submitted_at')
+            ->get()
+            ->map(fn (ProgramEvaluationForm $form) => [
+                'kind' => 'program_evaluation',
+                'id' => $form->id,
+                'title' => $form->title,
+                'kind_label' => 'Programs evaluated',
+                'office_name' => $form->office_name,
+                'evaluation_year' => $form->evaluation_year,
+                'entries_count' => $form->entries_count,
+                'supervisor_name' => $form->supervisor?->name,
+                'submitted_at' => $form->submitted_at?->toIso8601String(),
+                'show_url' => route('admin.program-evaluations.show', $form),
+            ]);
+
+        $sto = StoMonitoringForm::query()
+            ->with('supervisor:id,name,email')
+            ->withCount('entries')
+            ->where('status', RegisterReportStatus::InReview)
+            ->orderByDesc('submitted_at')
+            ->get()
+            ->map(fn (StoMonitoringForm $form) => [
+                'kind' => 'sto_monitoring',
+                'id' => $form->id,
+                'title' => $form->title,
+                'kind_label' => $form->report_type->label(),
+                'office_name' => $form->office_name,
+                'evaluation_year' => $form->evaluation_year,
+                'entries_count' => $form->entries_count,
+                'supervisor_name' => $form->supervisor?->name,
+                'submitted_at' => $form->submitted_at?->toIso8601String(),
+                'show_url' => route('admin.sto-monitoring.show', $form),
+            ]);
+
+        return $programs->concat($sto)
+            ->sortByDesc('submitted_at')
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function approvedRegisterReports(): array
+    {
+        $programs = ProgramEvaluationForm::query()
+            ->with('supervisor:id,name,email')
+            ->withCount('entries')
+            ->where('status', RegisterReportStatus::Approved)
+            ->orderByDesc('reviewed_at')
+            ->take(30)
+            ->get()
+            ->map(fn (ProgramEvaluationForm $form) => [
+                'kind' => 'program_evaluation',
+                'id' => $form->id,
+                'title' => $form->title,
+                'kind_label' => 'Programs evaluated',
+                'evaluation_year' => $form->evaluation_year,
+                'entries_count' => $form->entries_count,
+                'supervisor_name' => $form->supervisor?->name,
+                'reviewed_at' => $form->reviewed_at?->toIso8601String(),
+                'show_url' => route('admin.program-evaluations.show', $form),
+            ]);
+
+        $sto = StoMonitoringForm::query()
+            ->with('supervisor:id,name,email')
+            ->withCount('entries')
+            ->where('status', RegisterReportStatus::Approved)
+            ->orderByDesc('reviewed_at')
+            ->take(30)
+            ->get()
+            ->map(fn (StoMonitoringForm $form) => [
+                'kind' => 'sto_monitoring',
+                'id' => $form->id,
+                'title' => $form->title,
+                'kind_label' => $form->report_type->label(),
+                'evaluation_year' => $form->evaluation_year,
+                'entries_count' => $form->entries_count,
+                'supervisor_name' => $form->supervisor?->name,
+                'reviewed_at' => $form->reviewed_at?->toIso8601String(),
+                'show_url' => route('admin.sto-monitoring.show', $form),
+            ]);
+
+        return $programs->concat($sto)
+            ->sortByDesc('reviewed_at')
+            ->take(40)
+            ->values()
+            ->all();
     }
 }

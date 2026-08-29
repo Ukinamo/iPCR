@@ -1,90 +1,60 @@
 <script setup>
 import AppIcon from '@/Components/AppIcon.vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
-import InputLabel from '@/Components/InputLabel.vue';
-import PrimaryButton from '@/Components/PrimaryButton.vue';
-import ReviewTransferPanel from '@/Components/ReviewTransferPanel.vue';
-import SecondaryButton from '@/Components/SecondaryButton.vue';
-import { Head, Link, router, useForm } from '@inertiajs/vue3';
-import { computed, reactive, ref } from 'vue';
+import { Head, Link, router } from '@inertiajs/vue3';
+import { computed, onMounted, ref } from 'vue';
+import { statusLabel } from '@/utils/statusLabels';
 
 const props = defineProps({
     stats: Object,
     submissions: Array,
-    teamMembers: {
+    approvedSubmissions: {
         type: Array,
         default: () => [],
     },
-    supervisors: {
+    programEvaluationForms: {
         type: Array,
         default: () => [],
     },
-    transferRequests: {
-        type: Array,
-        default: () => [],
-    },
-    incomingReviewTransfers: {
-        type: Array,
-        default: () => [],
-    },
-    outgoingReviewTransfers: {
+    stoMonitoringForms: {
         type: Array,
         default: () => [],
     },
 });
 
-const tab = ref('team');
-const transferForms = reactive({});
-const processingCancel = reactive({});
+const tab = ref('history');
+
+onMounted(() => {
+    const requestedTab = new URLSearchParams(window.location.search).get('tab');
+    if (['history', 'programs', 'team'].includes(requestedTab)) {
+        tab.value = requestedTab;
+    }
+});
 
 const statCards = [
-    { key: 'teamMembers', label: 'Team Members', icon: 'users', tone: 'bg-sky-100 text-sky-700' },
     { key: 'approved', label: 'Approved', icon: 'check-badge', tone: 'bg-emerald-100 text-emerald-700' },
-    { key: 'pendingReview', label: 'Pending Review', icon: 'clipboard', tone: 'bg-amber-100 text-amber-700' },
+    { key: 'pendingReview', label: 'With administrator', icon: 'clipboard', tone: 'bg-amber-100 text-amber-700' },
     { key: 'averageRating', label: 'Average overall', icon: 'star', tone: 'bg-violet-100 text-violet-700' },
 ];
 
 const tabs = [
+    { id: 'history', label: 'Approved', icon: 'check-badge' },
+    { id: 'programs', label: 'Registers', icon: 'document-chart-bar' },
     { id: 'team', label: 'Submissions', icon: 'clipboard' },
-    { id: 'roster', label: 'My team', icon: 'users' },
-    { id: 'history', label: 'Rating history', icon: 'star' },
 ];
 
-props.teamMembers.forEach((member) => {
-    transferForms[member.id] = useForm({
-        employee_id: member.id,
-        to_supervisor_id: '',
-        reason: '',
-    });
-});
-
-const employeesWithPendingTransfer = computed(() => new Set((props.transferRequests || []).map((r) => r.employee_id)));
-
-const activeSubmissions = computed(() =>
-    (props.submissions || []).filter((s) => s.status !== 'approved'),
-);
-
-const needsReviewSubmissions = computed(() =>
-    (props.submissions || []).filter((s) => s.status === 'in_review'),
-);
-
-const otherActiveSubmissions = computed(() =>
-    (props.submissions || []).filter((s) => s.status !== 'approved' && s.status !== 'in_review'),
-);
+const activeSubmissions = computed(() => props.submissions || []);
 
 function evidenceCount(s) {
     return (s.commitments || []).reduce((sum, c) => sum + (c.accomplishments?.length || 0), 0);
 }
-
-const approvedSubmissions = computed(() =>
-    (props.submissions || []).filter((s) => s.status === 'approved'),
-);
 
 function badge(status) {
     const map = {
         approved: 'bg-emerald-50 text-emerald-800 ring-emerald-100',
         in_review: 'bg-sky-50 text-sky-800 ring-sky-100',
         pending: 'bg-amber-50 text-amber-900 ring-amber-100',
+        draft: 'bg-amber-50 text-amber-900 ring-amber-100',
         returned: 'bg-rose-50 text-rose-900 ring-rose-100',
     };
     return map[status] ?? 'bg-slate-50 text-slate-700 ring-slate-100';
@@ -109,31 +79,46 @@ function formatWhen(iso) {
 }
 
 function periodLabel(s) {
-    return `Q${s.evaluation_quarter} ${s.evaluation_year}`;
+    const qs = (s.included_quarters || []).map((q) => Number(q)).filter((q) => q >= 1 && q <= 4);
+    const list = qs.length ? [...new Set(qs)].sort((a, b) => a - b) : [s.evaluation_quarter].filter(Boolean);
+    if (!list.length) {
+        return `Q${s.evaluation_quarter} ${s.evaluation_year}`;
+    }
+    return list.map((q) => `Q${q}`).join(', ') + ` ${s.evaluation_year}`;
 }
 
-function reviewButtonLabel(s) {
-    if (s.status === 'in_review') return 'Review package';
-    if (s.status === 'pending') return 'View package';
-    if (s.status === 'returned') return 'View package';
-    return 'View package';
+function destroyProgramForm(id) {
+    if (!confirm('Delete this programs evaluated form?')) {
+        return;
+    }
+    router.delete(route('supervisor.program-evaluations.destroy', id), { preserveScroll: true });
 }
 
-function submitTransfer(employeeId) {
-    transferForms[employeeId].post(route('supervisor.transfer-requests.store'), {
-        preserveScroll: true,
-        onSuccess: () => {
-            transferForms[employeeId].reset('to_supervisor_id', 'reason');
-        },
-    });
+function destroyStoForm(id) {
+    if (!confirm('Delete this STO monitoring report?')) {
+        return;
+    }
+    router.delete(route('supervisor.sto-monitoring.destroy', id), { preserveScroll: true });
 }
 
-function cancelTransfer(id) {
-    processingCancel[id] = true;
-    router.delete(route('supervisor.transfer-requests.destroy', id), {
-        preserveScroll: true,
-        onFinish: () => { processingCancel[id] = false; },
-    });
+function stoReportType(form) {
+    const value = form?.report_type;
+    if (typeof value === 'string') {
+        return value;
+    }
+    return value?.value || '';
+}
+
+function stoFormsOf(type) {
+    return (props.stoMonitoringForms || []).filter((form) => stoReportType(form) === type);
+}
+
+function displayStatus(status) {
+    if (status === 'in_review') {
+        return 'Awaiting administrator';
+    }
+
+    return statusLabel(status);
 }
 </script>
 
@@ -149,15 +134,14 @@ function cancelTransfer(id) {
                 <div>
                     <h2 class="text-xl font-semibold leading-tight text-gray-800">Supervisor Dashboard</h2>
                     <p class="text-sm text-gray-500">
-                        Rate each commitment using IPCR Form 1 rules: Quality from accomplishment (or progress %), Efficiency and Timeliness (1–5), then
-                        weighted scores sum to the package overall.
+                    Follow approved IPCR packages, then create Programs Evaluated and STO monitoring registers.
                     </p>
                 </div>
             </div>
         </template>
 
         <div class="py-8">
-            <div class="mx-auto max-w-6xl space-y-6 px-4 sm:px-6 lg:px-8">
+            <div class="mx-auto max-w-7xl space-y-6 px-4 sm:px-6 lg:px-8">
                 <div class="grid gap-4 md:grid-cols-4">
                     <div
                         v-for="card in statCards"
@@ -193,124 +177,7 @@ function cancelTransfer(id) {
                     </button>
                 </div>
 
-                <div v-show="tab === 'roster'" class="space-y-4">
-                    <div class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-                        <div class="flex items-start gap-3">
-                            <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-100 text-blue-700">
-                                <AppIcon name="users" class="h-5 w-5" />
-                            </span>
-                            <div>
-                                <h3 class="text-lg font-semibold text-slate-900">Team roster & transfers</h3>
-                                <p class="mt-1 text-sm text-slate-600">
-                                    Request to transfer an employee to another supervisor. An administrator must approve before the employee is reassigned.
-                                </p>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div v-if="transferRequests?.length" class="space-y-3">
-                        <p class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                            <AppIcon name="clock" class="h-3.5 w-3.5" />
-                            Pending transfer requests
-                        </p>
-                        <div v-for="req in transferRequests" :key="req.id" class="rounded-xl border border-amber-200 bg-amber-50/50 p-4">
-                            <div class="flex flex-wrap items-center justify-between gap-3">
-                                <div>
-                                    <p class="font-semibold text-slate-900">{{ req.employee?.name }}</p>
-                                    <p class="text-sm text-slate-600">Transfer to {{ req.to_supervisor?.name }} · awaiting admin approval</p>
-                                </div>
-                                <SecondaryButton type="button" :disabled="processingCancel[req.id]" @click="cancelTransfer(req.id)">
-                                    <span class="inline-flex items-center gap-1.5">
-                                        <AppIcon name="x-mark" class="h-3.5 w-3.5" />
-                                        Cancel request
-                                    </span>
-                                </SecondaryButton>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div v-if="!teamMembers?.length" class="rounded-xl border border-dashed border-slate-200 bg-white p-8 text-center text-sm text-slate-500">
-                        <AppIcon name="users" class="mx-auto h-8 w-8 text-slate-300" />
-                        <p class="mt-3">No employees are currently assigned to you.</p>
-                    </div>
-
-                    <div v-for="member in teamMembers" :key="member.id" class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-                        <div class="flex flex-wrap items-start justify-between gap-3">
-                            <div>
-                                <p class="font-semibold text-slate-900">{{ member.name }}</p>
-                                <p class="text-sm text-slate-600">{{ member.email }}</p>
-                            </div>
-                            <span
-                                v-if="employeesWithPendingTransfer.has(member.id)"
-                                class="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-900 ring-1 ring-amber-100"
-                            >
-                                <AppIcon name="clock" class="h-3 w-3" />
-                                transfer pending
-                            </span>
-                        </div>
-
-                        <form
-                            v-if="!employeesWithPendingTransfer.has(member.id)"
-                            class="mt-4 grid gap-4 md:grid-cols-2"
-                            @submit.prevent="submitTransfer(member.id)"
-                        >
-                            <div>
-                                <InputLabel :for="`supervisor-${member.id}`" value="Transfer to supervisor" />
-                                <select
-                                    :id="`supervisor-${member.id}`"
-                                    v-model="transferForms[member.id].to_supervisor_id"
-                                    class="mt-1 block w-full rounded-md border-slate-300 text-sm shadow-sm"
-                                    required
-                                >
-                                    <option value="">Select supervisor</option>
-                                    <option v-for="s in supervisors" :key="s.id" :value="s.id">{{ s.name }} — {{ s.email }}</option>
-                                </select>
-                                <p v-if="transferForms[member.id].errors.to_supervisor_id" class="mt-1 text-xs text-rose-600">{{ transferForms[member.id].errors.to_supervisor_id }}</p>
-                            </div>
-                            <div>
-                                <InputLabel :for="`reason-${member.id}`" value="Reason (optional)" />
-                                <textarea
-                                    :id="`reason-${member.id}`"
-                                    v-model="transferForms[member.id].reason"
-                                    rows="2"
-                                    class="mt-1 block w-full rounded-md border-slate-300 text-sm shadow-sm"
-                                    placeholder="Why should this employee be reassigned?"
-                                />
-                            </div>
-                            <div class="md:col-span-2">
-                                <PrimaryButton type="submit" :disabled="transferForms[member.id].processing">
-                                    <span class="inline-flex items-center gap-1.5">
-                                        <AppIcon name="arrow-top-right" class="h-4 w-4" />
-                                        Request transfer
-                                    </span>
-                                </PrimaryButton>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-
                 <div v-show="tab === 'team'" class="space-y-4">
-                    <ReviewTransferPanel
-                        :incoming-review-transfers="incomingReviewTransfers"
-                        :outgoing-review-transfers="outgoingReviewTransfers"
-                        :supervisors="supervisors"
-                    />
-
-                    <div
-                        v-if="needsReviewSubmissions.length"
-                        class="flex items-start gap-3 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-950"
-                    >
-                        <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-100 text-sky-700">
-                            <AppIcon name="exclamation-triangle" class="h-5 w-5" />
-                        </span>
-                        <div>
-                            <p class="font-semibold text-sky-900">
-                                {{ needsReviewSubmissions.length }} package{{ needsReviewSubmissions.length === 1 ? '' : 's' }} waiting for your review
-                            </p>
-                            <p class="mt-1 text-sky-900/85">Open each submission below to rate commitments, review evidence, and approve or return.</p>
-                        </div>
-                    </div>
-
                     <div class="flex items-center gap-3">
                         <span class="flex h-10 w-10 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
                             <AppIcon name="clipboard" class="h-5 w-5" />
@@ -318,101 +185,49 @@ function cancelTransfer(id) {
                         <h3 class="text-lg font-semibold text-slate-900">Employee submissions</h3>
                     </div>
 
-                    <div v-if="needsReviewSubmissions.length" class="space-y-3">
-                        <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Needs review</p>
-                        <div
-                            v-for="s in needsReviewSubmissions"
-                            :key="'review-' + s.id"
-                            class="rounded-xl border-2 border-sky-200 bg-white p-5 shadow-sm ring-1 ring-sky-100"
-                        >
-                            <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                                <div class="flex items-center gap-3">
-                                    <div class="flex h-12 w-12 items-center justify-center rounded-full bg-sky-100 text-sm font-bold text-sky-800">
-                                        {{ initials(s.employee.name) }}
-                                    </div>
-                                    <div>
-                                        <p class="font-semibold text-slate-900">{{ s.employee.name }}</p>
-                                        <p class="text-xs text-slate-500">{{ periodLabel(s) }} · Submitted {{ formatWhen(s.submitted_at) }}</p>
-                                        <p class="mt-1 text-xs text-slate-600">
-                                            {{ s.commitments?.length ?? 0 }} commitment(s)
-                                            <span v-if="evidenceCount(s)" class="ml-1 inline-flex items-center gap-0.5 rounded-full bg-emerald-50 px-2 py-0.5 font-semibold text-emerald-800 ring-1 ring-emerald-100">
-                                                <AppIcon name="paper-clip" class="h-3 w-3" />
-                                                {{ evidenceCount(s) }} evidence file{{ evidenceCount(s) === 1 ? '' : 's' }}
-                                            </span>
-                                        </p>
-                                    </div>
-                                </div>
-                                <div class="flex flex-wrap items-center gap-2">
-                                    <span class="rounded-full bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-800 ring-1 ring-sky-100">
-                                        in review
-                                    </span>
-                                    <Link :href="route('supervisor.submissions.show', s.id)">
-                                        <PrimaryButton type="button" class="!bg-sky-600 hover:!bg-sky-700">
-                                            <span class="inline-flex items-center gap-1.5">
-                                                <AppIcon name="pencil" class="h-4 w-4" />
-                                                Review package
-                                            </span>
-                                        </PrimaryButton>
-                                    </Link>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div v-if="otherActiveSubmissions.length" class="space-y-3">
-                        <p v-if="needsReviewSubmissions.length" class="text-xs font-semibold uppercase tracking-wide text-slate-500">Other active</p>
-                        <div v-for="s in otherActiveSubmissions" :key="s.id" class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-                            <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                                <div class="flex items-center gap-3">
-                                    <div class="flex h-12 w-12 items-center justify-center rounded-full bg-blue-100 text-sm font-bold text-blue-800">
-                                        {{ initials(s.employee.name) }}
-                                    </div>
-                                    <div>
-                                        <p class="font-semibold text-slate-900">{{ s.employee.name }}</p>
-                                        <p class="text-xs text-slate-500">{{ periodLabel(s) }} · Submitted {{ formatWhen(s.submitted_at) }}</p>
-                                        <p v-if="s.commitments?.length" class="mt-1 text-xs text-slate-600">{{ s.commitments.length }} commitment(s) in package</p>
-                                    </div>
-                                </div>
-                                <div class="flex flex-wrap items-center gap-2">
-                                    <span class="rounded-full px-3 py-1 text-xs font-semibold ring-1" :class="badge(s.status)">
-                                        {{ s.status.replace('_', ' ') }}
-                                    </span>
-                                    <Link :href="route('supervisor.submissions.show', s.id)">
-                                        <SecondaryButton type="button">
-                                            <span class="inline-flex items-center gap-1.5">
-                                                <AppIcon name="eye" class="h-4 w-4" />
-                                                {{ reviewButtonLabel(s) }}
-                                            </span>
-                                        </SecondaryButton>
-                                    </Link>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
                     <div v-if="!activeSubmissions.length" class="rounded-xl border border-dashed border-slate-200 bg-white p-6 text-center text-sm text-slate-500">
                         <AppIcon name="document-chart-bar" class="mx-auto h-8 w-8 text-slate-300" />
                         <p class="mt-3">
-                            No active submissions right now. Check the
-                            <button type="button" class="inline-flex items-center gap-1 font-semibold text-blue-700 hover:underline" @click="tab = 'history'">
-                                <AppIcon name="star" class="h-3.5 w-3.5" />
-                                Rating history
-                            </button>
-                            tab for past approvals.
+                            No active submissions right now. Check
+                            <button type="button" class="font-semibold text-blue-700 hover:underline" @click="tab = 'history'">Rating history</button>
+                            for past approvals.
                         </p>
+                    </div>
+
+                    <div
+                        v-for="s in activeSubmissions"
+                        :key="s.id"
+                        class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
+                    >
+                        <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                            <div class="flex items-center gap-3">
+                                <div class="flex h-12 w-12 items-center justify-center rounded-full bg-blue-100 text-sm font-bold text-blue-800">
+                                    {{ initials(s.employee.name) }}
+                                </div>
+                                <div>
+                                    <p class="font-semibold text-slate-900">{{ s.employee.name }}</p>
+                                    <p class="text-xs text-slate-500">{{ periodLabel(s) }} · Submitted {{ formatWhen(s.submitted_at) }}</p>
+                                    <p class="mt-1 text-xs text-slate-600">
+                                        {{ s.commitments?.length ?? 0 }} commitment(s)
+                                        <span v-if="evidenceCount(s)" class="ml-1 inline-flex items-center gap-0.5 rounded-full bg-emerald-50 px-2 py-0.5 font-semibold text-emerald-800 ring-1 ring-emerald-100">
+                                            <AppIcon name="paper-clip" class="h-3 w-3" />
+                                            {{ evidenceCount(s) }} evidence file{{ evidenceCount(s) === 1 ? '' : 's' }}
+                                        </span>
+                                    </p>
+                                </div>
+                            </div>
+                            <span class="rounded-full px-3 py-1 text-xs font-semibold ring-1" :class="badge(s.status)">
+                                {{ displayStatus(s.status) }}
+                            </span>
+                        </div>
                     </div>
                 </div>
 
                 <div v-show="tab === 'history'" class="space-y-4">
-                    <div class="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
-                        <div class="flex items-center gap-3">
-                            <span class="flex h-10 w-10 items-center justify-center rounded-lg bg-violet-100 text-violet-700">
-                                <AppIcon name="star" class="h-5 w-5" />
-                            </span>
-                            <div>
-                                <h3 class="text-lg font-semibold text-slate-900">Rating history</h3>
-                                <p class="text-xs text-slate-500">Approved IPCR submissions from your team.</p>
-                            </div>
+                    <div class="flex items-center justify-between gap-3">
+                        <div>
+                            <h3 class="text-sm font-semibold text-slate-900">Approved IPCR packages</h3>
+                            <p class="text-xs text-slate-500">Every approved package from your team.</p>
                         </div>
                     </div>
 
@@ -421,52 +236,197 @@ function cancelTransfer(id) {
                         <p class="mt-3">No approved submissions yet.</p>
                     </div>
 
-                    <div v-else class="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
-                        <table class="min-w-full divide-y divide-slate-200 text-sm">
+                    <table v-else class="w-full table-fixed divide-y divide-slate-200 rounded-xl border border-slate-200 bg-white text-sm shadow-sm">
+                        <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-600">
+                            <tr>
+                                <th class="px-3 py-2 text-left">Employee</th>
+                                <th class="w-[18%] px-3 py-2 text-left">Period</th>
+                                <th class="w-[18%] px-3 py-2 text-left">Approved</th>
+                                <th class="w-[12%] px-3 py-2 text-center">Overall</th>
+                                <th class="w-[14%] px-3 py-2 text-right">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100">
+                            <tr v-for="s in approvedSubmissions" :key="s.id" class="align-top">
+                                <td class="px-3 py-2">
+                                    <p class="break-words font-semibold text-slate-900">{{ s.employee.name }}</p>
+                                    <p class="break-words text-[11px] text-slate-500">{{ s.employee.email }}</p>
+                                </td>
+                                <td class="px-3 py-2 text-slate-700">{{ periodLabel(s) }}</td>
+                                <td class="px-3 py-2 text-xs text-slate-600">{{ formatWhen(s.reviewed_at) }}</td>
+                                <td class="px-3 py-2 text-center">
+                                    <span class="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-800 ring-1 ring-emerald-100">
+                                        {{ s.overall_rating != null ? Number(s.overall_rating).toFixed(2) : '—' }}
+                                    </span>
+                                </td>
+                                <td class="px-3 py-2 text-right">
+                                    <Link
+                                        :href="route('supervisor.submissions.preview', s.id)"
+                                        class="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+                                    >
+                                        <AppIcon name="eye" class="h-3.5 w-3.5" />
+                                        Preview
+                                    </Link>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div v-show="tab === 'programs'" class="space-y-8">
+                    <section class="space-y-3">
+                        <div class="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+                            <div>
+                                <h3 class="text-sm font-semibold text-slate-900">Programs evaluated</h3>
+                                <p class="text-xs text-slate-500">Programs Monitored / Evaluated / Inspected.</p>
+                            </div>
+                            <Link
+                                :href="route('supervisor.program-evaluations.create')"
+                                class="inline-flex items-center justify-center gap-1.5 rounded-md bg-cyan-700 px-3 py-2 text-sm font-semibold text-white hover:bg-cyan-800"
+                            >
+                                <AppIcon name="plus" class="h-4 w-4" />
+                                New form
+                            </Link>
+                        </div>
+                        <div v-if="!programEvaluationForms.length" class="rounded-xl border border-dashed border-slate-200 bg-white p-6 text-center text-xs text-slate-500">
+                            No programs evaluated forms yet.
+                        </div>
+                        <table v-else class="w-full table-fixed divide-y divide-slate-200 rounded-xl border border-slate-200 bg-white text-sm shadow-sm">
                             <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-600">
                                 <tr>
-                                    <th class="px-4 py-3 text-left">Employee</th>
-                                    <th class="px-4 py-3 text-left">Period</th>
-                                    <th class="px-4 py-3 text-left">Approved</th>
-                                    <th class="px-4 py-3 text-center">Commitments</th>
-                                    <th class="px-4 py-3 text-center">Overall</th>
-                                    <th class="px-4 py-3 text-right">Actions</th>
+                                    <th class="px-3 py-2 text-left">Title</th>
+                                    <th class="w-[12%] px-3 py-2 text-left">Year</th>
+                                    <th class="w-[14%] px-3 py-2 text-center">Rows</th>
+                                    <th class="w-[16%] px-3 py-2 text-left">Status</th>
+                                    <th class="w-[22%] px-3 py-2 text-right">Actions</th>
                                 </tr>
                             </thead>
                             <tbody class="divide-y divide-slate-100">
-                                <tr v-for="s in approvedSubmissions" :key="s.id" class="align-top">
-                                    <td class="px-4 py-3">
-                                        <div class="flex items-center gap-2">
-                                            <div class="flex h-8 w-8 items-center justify-center rounded-full bg-blue-100 text-[11px] font-bold text-blue-800">
-                                                {{ initials(s.employee.name) }}
-                                            </div>
-                                            <div>
-                                                <p class="font-semibold text-slate-900">{{ s.employee.name }}</p>
-                                                <p class="text-[11px] text-slate-500">{{ s.employee.email }}</p>
-                                            </div>
+                                <tr v-for="form in programEvaluationForms" :key="'pe-' + form.id">
+                                    <td class="px-3 py-2">
+                                        <p class="font-medium text-slate-900">{{ form.title }}</p>
+                                        <p class="text-[11px] text-slate-500">{{ form.office_name }}</p>
+                                    </td>
+                                    <td class="px-3 py-2 text-slate-700">{{ form.evaluation_year }}</td>
+                                    <td class="px-3 py-2 text-center text-slate-700">{{ form.entries_count ?? 0 }}</td>
+                                    <td class="px-3 py-2">
+                                        <span class="rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1" :class="badge(form.status)">{{ displayStatus(form.status) }}</span>
+                                    </td>
+                                    <td class="px-3 py-2">
+                                        <div class="flex flex-wrap justify-end gap-1.5">
+                                            <Link
+                                                :href="route('supervisor.program-evaluations.edit', form.id)"
+                                                class="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-800 hover:bg-slate-50"
+                                            >
+                                                {{ form.can_edit ? 'Edit' : 'View' }}
+                                            </Link>
+                                            <button v-if="form.can_edit" type="button" class="inline-flex items-center rounded-md border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-800 hover:bg-rose-100" @click="destroyProgramForm(form.id)">
+                                                Delete
+                                            </button>
                                         </div>
-                                    </td>
-                                    <td class="px-4 py-3 text-slate-700">{{ periodLabel(s) }}</td>
-                                    <td class="px-4 py-3 text-xs text-slate-600">{{ formatWhen(s.reviewed_at) }}</td>
-                                    <td class="px-4 py-3 text-center text-slate-700">{{ s.commitments?.length ?? 0 }}</td>
-                                    <td class="px-4 py-3 text-center">
-                                        <span class="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-800 ring-1 ring-emerald-100">
-                                            {{ s.overall_rating != null ? Number(s.overall_rating).toFixed(2) : '—' }}
-                                        </span>
-                                    </td>
-                                    <td class="px-4 py-3 text-right">
-                                        <Link
-                                            :href="route('supervisor.submissions.show', s.id)"
-                                            class="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
-                                        >
-                                            <AppIcon name="eye" class="h-3.5 w-3.5" />
-                                            Open
-                                        </Link>
                                     </td>
                                 </tr>
                             </tbody>
                         </table>
-                    </div>
+                    </section>
+
+                    <section class="space-y-3">
+                        <div class="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+                            <div>
+                                <h3 class="text-sm font-semibold text-slate-900">REPORT ON STO: Monitoring of HEI with STUFAPs</h3>
+                                <p class="text-xs text-slate-500">HEI, STUFAP program, grantees/borrowers, date monitored, remarks.</p>
+                            </div>
+                            <Link
+                                :href="route('supervisor.sto-monitoring.create', { type: 'stufap' })"
+                                class="inline-flex items-center justify-center gap-1.5 rounded-md bg-cyan-700 px-3 py-2 text-sm font-semibold text-white hover:bg-cyan-800"
+                            >
+                                <AppIcon name="plus" class="h-4 w-4" />
+                                New STUFAP report
+                            </Link>
+                        </div>
+                        <div v-if="!stoFormsOf('stufap').length" class="rounded-xl border border-dashed border-slate-200 bg-white p-6 text-center text-xs text-slate-500">
+                            No STUFAP monitoring reports yet.
+                        </div>
+                        <table v-else class="w-full table-fixed divide-y divide-slate-200 rounded-xl border border-slate-200 bg-white text-sm shadow-sm">
+                            <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-600">
+                                <tr>
+                                    <th class="px-3 py-2 text-left">Title</th>
+                                    <th class="w-[12%] px-3 py-2 text-left">Year</th>
+                                    <th class="w-[14%] px-3 py-2 text-center">Rows</th>
+                                    <th class="w-[16%] px-3 py-2 text-left">Status</th>
+                                    <th class="w-[22%] px-3 py-2 text-right">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-100">
+                                <tr v-for="form in stoFormsOf('stufap')" :key="'stufap-' + form.id">
+                                    <td class="px-3 py-2">
+                                        <p class="font-medium text-slate-900">{{ form.title }}</p>
+                                        <p class="text-[11px] text-slate-500">{{ form.office_name }}</p>
+                                    </td>
+                                    <td class="px-3 py-2 text-slate-700">{{ form.evaluation_year }}</td>
+                                    <td class="px-3 py-2 text-center text-slate-700">{{ form.entries_count ?? 0 }}</td>
+                                    <td class="px-3 py-2">
+                                        <span class="rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1" :class="badge(form.status)">{{ displayStatus(form.status) }}</span>
+                                    </td>
+                                    <td class="px-3 py-2">
+                                        <div class="flex flex-wrap justify-end gap-1.5">
+                                            <Link :href="route('supervisor.sto-monitoring.edit', form.id)" class="inline-flex items-center rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-800 hover:bg-slate-50">{{ form.can_edit ? 'Edit' : 'View' }}</Link>
+                                            <button v-if="form.can_edit" type="button" class="inline-flex items-center rounded-md border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-800 hover:bg-rose-100" @click="destroyStoForm(form.id)">Delete</button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </section>
+
+                    <section class="space-y-3">
+                        <div class="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+                            <div>
+                                <h3 class="text-sm font-semibold text-slate-900">REPORT ON STO: Monitoring of Student Services</h3>
+                                <p class="text-xs text-slate-500">HEI, type of student service, date monitored, remarks.</p>
+                            </div>
+                            <Link
+                                :href="route('supervisor.sto-monitoring.create', { type: 'student_services' })"
+                                class="inline-flex items-center justify-center gap-1.5 rounded-md bg-cyan-700 px-3 py-2 text-sm font-semibold text-white hover:bg-cyan-800"
+                            >
+                                <AppIcon name="plus" class="h-4 w-4" />
+                                New student services report
+                            </Link>
+                        </div>
+                        <div v-if="!stoFormsOf('student_services').length" class="rounded-xl border border-dashed border-slate-200 bg-white p-6 text-center text-xs text-slate-500">
+                            No student services monitoring reports yet.
+                        </div>
+                        <table v-else class="w-full table-fixed divide-y divide-slate-200 rounded-xl border border-slate-200 bg-white text-sm shadow-sm">
+                            <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-600">
+                                <tr>
+                                    <th class="px-3 py-2 text-left">Title</th>
+                                    <th class="w-[12%] px-3 py-2 text-left">Year</th>
+                                    <th class="w-[14%] px-3 py-2 text-center">Rows</th>
+                                    <th class="w-[16%] px-3 py-2 text-left">Status</th>
+                                    <th class="w-[22%] px-3 py-2 text-right">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-100">
+                                <tr v-for="form in stoFormsOf('student_services')" :key="'ss-' + form.id">
+                                    <td class="px-3 py-2">
+                                        <p class="font-medium text-slate-900">{{ form.title }}</p>
+                                        <p class="text-[11px] text-slate-500">{{ form.office_name }}</p>
+                                    </td>
+                                    <td class="px-3 py-2 text-slate-700">{{ form.evaluation_year }}</td>
+                                    <td class="px-3 py-2 text-center text-slate-700">{{ form.entries_count ?? 0 }}</td>
+                                    <td class="px-3 py-2">
+                                        <span class="rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1" :class="badge(form.status)">{{ displayStatus(form.status) }}</span>
+                                    </td>
+                                    <td class="px-3 py-2">
+                                        <div class="flex flex-wrap justify-end gap-1.5">
+                                            <Link :href="route('supervisor.sto-monitoring.edit', form.id)" class="inline-flex items-center rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-800 hover:bg-slate-50">{{ form.can_edit ? 'Edit' : 'View' }}</Link>
+                                            <button v-if="form.can_edit" type="button" class="inline-flex items-center rounded-md border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-800 hover:bg-rose-100" @click="destroyStoForm(form.id)">Delete</button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </section>
                 </div>
             </div>
         </div>

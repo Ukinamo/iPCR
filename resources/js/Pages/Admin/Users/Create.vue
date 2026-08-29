@@ -6,24 +6,16 @@ import PasswordRequirements from '@/Components/PasswordRequirements.vue';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
 import { Head, Link, useForm } from '@inertiajs/vue3';
 
-defineProps({
-    supervisors: Array,
-});
-
 const form = useForm({
     name: '',
     email: '',
     password: '',
     role: 'employee',
     account_status: 'active',
-    supervisor_id: '',
 });
 
 function submit() {
-    form.transform((data) => ({
-        ...data,
-        supervisor_id: data.role === 'employee' && data.supervisor_id ? data.supervisor_id : null,
-    })).post(route('admin.users.store'));
+    form.post(route('admin.users.store'));
 }
 </script>
 
@@ -77,14 +69,6 @@ function submit() {
                                 <option value="active">Active</option>
                                 <option value="inactive">Inactive</option>
                             </select>
-                        </div>
-                        <div v-if="form.role === 'employee'">
-                            <InputLabel for="supervisor_id" value="Supervisor" />
-                            <select id="supervisor_id" v-model="form.supervisor_id" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
-                                <option value="">Select supervisor</option>
-                                <option v-for="s in supervisors" :key="s.id" :value="s.id">{{ s.name }} — {{ s.email }}</option>
-                            </select>
-                            <InputError class="mt-2" :message="form.errors.supervisor_id" />
                         </div>
                         <div class="md:col-span-2">
                             <PrimaryButton class="bg-amber-600 hover:bg-amber-700 focus:ring-amber-500" :disabled="form.processing">Create user</PrimaryButton>

@@ -2,8 +2,10 @@
 import InputError from '@/Components/InputError.vue';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
 import SecondaryButton from '@/Components/SecondaryButton.vue';
-import { formatWholeNumber } from '@/utils/numberFormat';
-import { rowPreview, suggestedRating } from '@/utils/ipcrRating';
+import { formatWholeNumber, setRatingScaleField, setWholeNumberField } from '@/utils/numberFormat';
+import { groupFormRows } from '@/utils/ipcrFormEntries';
+import { isRateableRow, rowPreview, suggestedRatingForRow } from '@/utils/ipcrRating';
+import { Link } from '@inertiajs/vue3';
 import { computed } from 'vue';
 
 const rows = defineModel('rows', { type: Array, required: true });
@@ -33,9 +35,33 @@ const props = defineProps({
         type: Boolean,
         default: true,
     },
+    showBack: {
+        type: Boolean,
+        default: false,
+    },
+    backHref: {
+        type: String,
+        default: '',
+    },
+    showPackageSubmit: {
+        type: Boolean,
+        default: false,
+    },
+    packageSubmitProcessing: {
+        type: Boolean,
+        default: false,
+    },
+    showSaveButton: {
+        type: Boolean,
+        default: true,
+    },
+    includedQuarters: {
+        type: Array,
+        default: () => [3, 4],
+    },
 });
 
-const emit = defineEmits(['submit', 'cancel', 'view']);
+const emit = defineEmits(['submit', 'cancel', 'view', 'package-submit']);
 
 function confirmCancel() {
     if (window.confirm('Do you want to cancel?')) {
@@ -43,32 +69,16 @@ function confirmCancel() {
     }
 }
 
-const grouped = computed(() => {
-    const groups = { core: [], strategic: [] };
-    const maps = { core: new Map(), strategic: new Map() };
+const grouped = computed(() => groupFormRows(rows.value));
 
-    rows.value.forEach((row, index) => {
-        const type = row.function_type === 'strategic' ? 'strategic' : 'core';
-        const key = (row.title || '').trim() || `__blank_${type}_${index}`;
-        if (!maps[type].has(key)) {
-            const group = { key, title: row.title || '', indexes: [] };
-            maps[type].set(key, group);
-            groups[type].push(group);
-        }
-        maps[type].get(key).indexes.push(index);
-    });
-
-    return groups;
-});
+function onWholeAccomplishment(row, key, event) {
+    setWholeNumberField(row, key, event?.target?.value);
+    onAccomplishmentChange(row);
+}
 
 function onAccomplishmentChange(row) {
-    const suggested = suggestedRating(
-        row.rating_q3_target,
-        row.rating_q3_actual,
-        row.rating_q4_target,
-        row.rating_q4_actual,
-    );
-    if (row.weight == null || row.weight === '') {
+    const suggested = suggestedRatingForRow(row, props.includedQuarters);
+    if (!isRateableRow(row)) {
         row.rating_quality = null;
         row.rating_efficiency = null;
         row.rating_timeliness = null;
@@ -82,8 +92,18 @@ function onAccomplishmentChange(row) {
     row.rating_timeliness = suggested;
 }
 
+function onRatingScale(row, key, event) {
+    if (!isRateableRow(row)) {
+        row.rating_quality = null;
+        row.rating_efficiency = null;
+        row.rating_timeliness = null;
+        return;
+    }
+    setRatingScaleField(row, key, event?.target?.value);
+}
+
 function preview(row) {
-    return rowPreview(row);
+    return rowPreview(row, props.includedQuarters);
 }
 
 function formatPercent(percent) {
@@ -126,6 +146,14 @@ const totalWeighted = computed(() => {
 
 const cell = 'border border-slate-300 px-0.5 py-1 text-center align-middle';
 const inputClass = 'h-7 w-full min-w-0 rounded border-gray-300 px-0.5 py-0 text-center text-[10px] shadow-none focus:border-indigo-500 focus:ring-indigo-500';
+
+const quarters = computed(() => {
+    const list = (props.includedQuarters || []).map((q) => Number(q)).filter((q) => q >= 1 && q <= 4);
+    return list.length ? [...new Set(list)].sort((a, b) => a - b) : [3, 4];
+});
+const accompColspan = computed(() => quarters.value.length * 2 + 3);
+const tableColspan = computed(() => 5 + accompColspan.value + 5);
+const quarterColWidth = computed(() => `${Math.max(3.5, 28 / Math.max(quarters.value.length, 1))}%`);
 </script>
 
 <template>
@@ -133,7 +161,7 @@ const inputClass = 'h-7 w-full min-w-0 rounded border-gray-300 px-0.5 py-0 text-
         <div class="flex items-start justify-between gap-3 px-1">
             <p class="text-sm text-slate-600">
                 Function, Indicators, Weight, and Targets come from your administrator.
-                Enter Q3/Q4 accomplishments. Rating, Average, and Remarks compute automatically.
+                Enter accomplishments for the included quarters. Q, E, and T auto-fill from accomplishment % when Weight or Annual Office Target is filled; you can still edit them (0–5). Average and Remarks follow those ratings.
             </p>
             <div class="flex shrink-0 flex-wrap justify-end gap-2">
                 <SecondaryButton v-if="showView" type="button" @click="emit('view')">
@@ -153,10 +181,7 @@ const inputClass = 'h-7 w-full min-w-0 rounded border-gray-300 px-0.5 py-0 text-
                     <col style="width: 5%" />
                     <col style="width: 7%" />
                     <col style="width: 7%" />
-                    <col style="width: 4.5%" />
-                    <col style="width: 4.5%" />
-                    <col style="width: 4.5%" />
-                    <col style="width: 4.5%" />
+                    <col v-for="n in quarters.length * 2" :key="'cq-' + n" :style="{ width: quarterColWidth }" />
                     <col style="width: 4.5%" />
                     <col style="width: 4.5%" />
                     <col style="width: 4%" />
@@ -173,13 +198,12 @@ const inputClass = 'h-7 w-full min-w-0 rounded border-gray-300 px-0.5 py-0 text-
                         <th :class="cell" rowspan="3">Weight</th>
                         <th :class="cell" rowspan="3">Annual Office Target</th>
                         <th :class="cell" rowspan="3">Individual Annual Targets</th>
-                        <th :class="cell" colspan="7">Accomplishments</th>
+                        <th :class="cell" :colspan="accompColspan">Accomplishments</th>
                         <th :class="cell" colspan="4">Rating</th>
                         <th :class="cell" rowspan="3">Remarks</th>
                     </tr>
                     <tr>
-                        <th :class="cell" colspan="2">Q3</th>
-                        <th :class="cell" colspan="2">Q4</th>
+                        <th v-for="q in quarters" :key="'h-' + q" :class="cell" colspan="2">Q{{ q }}</th>
                         <th :class="cell" colspan="3">Total</th>
                         <th :class="cell" rowspan="2">Q</th>
                         <th :class="cell" rowspan="2">E</th>
@@ -187,10 +211,10 @@ const inputClass = 'h-7 w-full min-w-0 rounded border-gray-300 px-0.5 py-0 text-
                         <th :class="cell" rowspan="2">Avg</th>
                     </tr>
                     <tr>
-                        <th :class="cell">Target</th>
-                        <th :class="cell">Actual</th>
-                        <th :class="cell">Target</th>
-                        <th :class="cell">Actual</th>
+                        <template v-for="q in quarters" :key="'ha-' + q">
+                            <th :class="cell">Target</th>
+                            <th :class="cell">Actual</th>
+                        </template>
                         <th :class="cell">Target</th>
                         <th :class="cell">Actual</th>
                         <th :class="cell">%</th>
@@ -203,7 +227,7 @@ const inputClass = 'h-7 w-full min-w-0 rounded border-gray-300 px-0.5 py-0 text-
                             :class="groupType === 'core' ? 'bg-blue-50/90' : 'bg-amber-50/90'"
                         >
                             <td
-                                colspan="17"
+                                :colspan="tableColspan"
                                 class="border border-slate-300 px-2 py-1.5 text-center text-[10px] font-bold uppercase tracking-wide"
                                 :class="groupType === 'core' ? 'text-blue-900' : 'text-amber-900'"
                             >
@@ -213,7 +237,7 @@ const inputClass = 'h-7 w-full min-w-0 rounded border-gray-300 px-0.5 py-0 text-
                         </tr>
                         <template v-for="(fnGroup, fgIdx) in grouped[groupType]" :key="groupType + '-' + fnGroup.key">
                             <tr v-if="fgIdx > 0" aria-hidden="true">
-                                <td colspan="17" class="h-1.5 border border-slate-300 bg-white p-0"></td>
+                                <td :colspan="tableColspan" class="h-1.5 border border-slate-300 bg-white p-0"></td>
                             </tr>
                             <tr
                                 v-for="(rowIndex, ri) in fnGroup.indexes"
@@ -241,54 +265,34 @@ const inputClass = 'h-7 w-full min-w-0 rounded border-gray-300 px-0.5 py-0 text-
                                 <td :class="cell + ' break-words text-slate-700'">
                                     {{ rows[rowIndex].individual_annual_targets || '—' }}
                                 </td>
-                                <td :class="cell">
-                                    <input
-                                        v-if="editable"
-                                        v-model="rows[rowIndex].rating_q3_target"
-                                        type="number"
-                                        step="1"
-                                        min="0"
-                                        :class="inputClass"
-                                        @change="onAccomplishmentChange(rows[rowIndex])"
-                                    />
-                                    <span v-else>{{ formatWholeNumber(rows[rowIndex].rating_q3_target) }}</span>
-                                </td>
-                                <td :class="cell">
-                                    <input
-                                        v-if="editable"
-                                        v-model="rows[rowIndex].rating_q3_actual"
-                                        type="number"
-                                        step="1"
-                                        min="0"
-                                        :class="inputClass"
-                                        @change="onAccomplishmentChange(rows[rowIndex])"
-                                    />
-                                    <span v-else>{{ formatWholeNumber(rows[rowIndex].rating_q3_actual) }}</span>
-                                </td>
-                                <td :class="cell">
-                                    <input
-                                        v-if="editable"
-                                        v-model="rows[rowIndex].rating_q4_target"
-                                        type="number"
-                                        step="1"
-                                        min="0"
-                                        :class="inputClass"
-                                        @change="onAccomplishmentChange(rows[rowIndex])"
-                                    />
-                                    <span v-else>{{ formatWholeNumber(rows[rowIndex].rating_q4_target) }}</span>
-                                </td>
-                                <td :class="cell">
-                                    <input
-                                        v-if="editable"
-                                        v-model="rows[rowIndex].rating_q4_actual"
-                                        type="number"
-                                        step="1"
-                                        min="0"
-                                        :class="inputClass"
-                                        @change="onAccomplishmentChange(rows[rowIndex])"
-                                    />
-                                    <span v-else>{{ formatWholeNumber(rows[rowIndex].rating_q4_actual) }}</span>
-                                </td>
+                                <template v-for="q in quarters" :key="'q-' + q">
+                                    <td :class="cell">
+                                        <input
+                                            v-if="editable"
+                                            :value="rows[rowIndex][`rating_q${q}_target`]"
+                                            type="number"
+                                            step="1"
+                                            min="0"
+                                            inputmode="numeric"
+                                            :class="inputClass"
+                                            @input="onWholeAccomplishment(rows[rowIndex], `rating_q${q}_target`, $event)"
+                                        />
+                                        <span v-else>{{ formatWholeNumber(rows[rowIndex][`rating_q${q}_target`]) }}</span>
+                                    </td>
+                                    <td :class="cell">
+                                        <input
+                                            v-if="editable"
+                                            :value="rows[rowIndex][`rating_q${q}_actual`]"
+                                            type="number"
+                                            step="1"
+                                            min="0"
+                                            inputmode="numeric"
+                                            :class="inputClass"
+                                            @input="onWholeAccomplishment(rows[rowIndex], `rating_q${q}_actual`, $event)"
+                                        />
+                                        <span v-else>{{ formatWholeNumber(rows[rowIndex][`rating_q${q}_actual`]) }}</span>
+                                    </td>
+                                </template>
                                 <td :class="cell + ' text-slate-700'">
                                     {{ formatWholeNumber(preview(rows[rowIndex]).targetTotal) }}
                                 </td>
@@ -298,20 +302,53 @@ const inputClass = 'h-7 w-full min-w-0 rounded border-gray-300 px-0.5 py-0 text-
                                 <td :class="cell + ' text-slate-700'">
                                     {{ formatPercent(preview(rows[rowIndex]).percent) }}
                                 </td>
-                                <td :class="cell + ' font-semibold text-slate-800'">
-                                    {{ preview(rows[rowIndex]).q ?? '—' }}
+                                <td :class="cell">
+                                    <input
+                                        v-if="editable && isRateableRow(rows[rowIndex])"
+                                        :value="rows[rowIndex].rating_quality"
+                                        type="number"
+                                        min="0"
+                                        max="5"
+                                        step="1"
+                                        inputmode="numeric"
+                                        :class="inputClass"
+                                        @input="onRatingScale(rows[rowIndex], 'rating_quality', $event)"
+                                    />
+                                    <span v-else class="font-semibold text-slate-800">{{ preview(rows[rowIndex]).q ?? '—' }}</span>
                                 </td>
-                                <td :class="cell + ' font-semibold text-slate-800'">
-                                    {{ preview(rows[rowIndex]).e ?? '—' }}
+                                <td :class="cell">
+                                    <input
+                                        v-if="editable && isRateableRow(rows[rowIndex])"
+                                        :value="rows[rowIndex].rating_efficiency"
+                                        type="number"
+                                        min="0"
+                                        max="5"
+                                        step="1"
+                                        inputmode="numeric"
+                                        :class="inputClass"
+                                        @input="onRatingScale(rows[rowIndex], 'rating_efficiency', $event)"
+                                    />
+                                    <span v-else class="font-semibold text-slate-800">{{ preview(rows[rowIndex]).e ?? '—' }}</span>
                                 </td>
-                                <td :class="cell + ' font-semibold text-slate-800'">
-                                    {{ preview(rows[rowIndex]).t ?? '—' }}
+                                <td :class="cell">
+                                    <input
+                                        v-if="editable && isRateableRow(rows[rowIndex])"
+                                        :value="rows[rowIndex].rating_timeliness"
+                                        type="number"
+                                        min="0"
+                                        max="5"
+                                        step="1"
+                                        inputmode="numeric"
+                                        :class="inputClass"
+                                        @input="onRatingScale(rows[rowIndex], 'rating_timeliness', $event)"
+                                    />
+                                    <span v-else class="font-semibold text-slate-800">{{ preview(rows[rowIndex]).t ?? '—' }}</span>
                                 </td>
                                 <td :class="cell + ' font-semibold text-slate-800'">
                                     {{ preview(rows[rowIndex]).avg != null ? preview(rows[rowIndex]).avg.toFixed(2) : '—' }}
                                 </td>
                                 <td :class="cell + ' font-semibold text-amber-800'">
-                                    {{ preview(rows[rowIndex]).weighted != null ? preview(rows[rowIndex]).weighted.toFixed(2) : '—' }}
+                                    {{ preview(rows[rowIndex]).remarks != null ? preview(rows[rowIndex]).remarks.toFixed(2) : '—' }}
                                 </td>
                             </tr>
                         </template>
@@ -319,7 +356,7 @@ const inputClass = 'h-7 w-full min-w-0 rounded border-gray-300 px-0.5 py-0 text-
                     <tr class="bg-slate-100 font-semibold">
                         <td colspan="2" class="border border-slate-300 px-1 py-1 text-right">TOTAL</td>
                         <td :class="cell">{{ totalWeight.toFixed(0) }}%</td>
-                        <td colspan="12" class="border border-slate-300"></td>
+                        <td :colspan="2 + accompColspan + 3" class="border border-slate-300"></td>
                         <td :class="cell">
                             {{ totalAverage != null ? totalAverage.toFixed(2) : '—' }}
                         </td>
@@ -331,10 +368,34 @@ const inputClass = 'h-7 w-full min-w-0 rounded border-gray-300 px-0.5 py-0 text-
             </table>
         </div>
 
-        <InputError :message="errors.commitments || errors.entries" />
+        <InputError :message="errors.commitments || errors.entries || errors.submission_id" />
 
-        <div class="flex flex-wrap justify-end gap-2 px-1">
-            <PrimaryButton v-if="editable" type="button" :disabled="processing" @click="emit('submit')">
+        <div
+            v-if="showBack || showPackageSubmit || (editable && showSaveButton)"
+            class="flex flex-wrap items-center gap-2 px-1"
+        >
+            <Link
+                v-if="showBack && backHref"
+                :href="backHref"
+                class="inline-flex items-center rounded-md border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-widest text-slate-700 shadow-sm hover:bg-slate-50"
+            >
+                Back to dashboard
+            </Link>
+            <PrimaryButton
+                v-if="showPackageSubmit && editable"
+                type="button"
+                :disabled="processing || packageSubmitProcessing"
+                @click="emit('package-submit')"
+            >
+                {{ packageSubmitProcessing || processing ? 'Submitting…' : 'Submit' }}
+            </PrimaryButton>
+            <PrimaryButton
+                v-if="editable && showSaveButton"
+                type="button"
+                class="ml-auto"
+                :disabled="processing || packageSubmitProcessing"
+                @click="emit('submit')"
+            >
                 {{ processing ? 'Saving…' : submitLabel }}
             </PrimaryButton>
         </div>

@@ -11,6 +11,7 @@ class IpcrFormTemplateItem extends Model
     protected $fillable = [
         'ipcr_form_template_id',
         'sort_order',
+        'function_group',
         'function_type',
         'title',
         'description',
@@ -22,6 +23,8 @@ class IpcrFormTemplateItem extends Model
     protected function casts(): array
     {
         return [
+            'sort_order' => 'integer',
+            'function_group' => 'integer',
             'weight' => 'decimal:2',
         ];
     }

@@ -3,18 +3,16 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Enums\FormTemplateStatus;
-use App\Enums\UserRole;
 use App\Http\Controllers\Controller;
+use App\Models\Commitment;
 use App\Models\IpcrFormTemplate;
-use App\Models\IpcrFormTemplateItem;
-use App\Models\User;
+use App\Models\IpcrSubmission;
 use App\Services\AuditLogger;
 use App\Services\CommitmentWeightRules;
-use App\Services\IpcrFormTemplateProvisioner;
+use App\Support\IpcrIncludedQuarters;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -34,6 +32,15 @@ class FormTemplateController extends Controller
     public function store(Request $request): RedirectResponse
     {
         $data = $this->validated($request);
+        $quarters = IpcrIncludedQuarters::normalize($data['included_quarters'] ?? []);
+        if ($quarters === []) {
+            throw ValidationException::withMessages([
+                'included_quarters' => 'Select at least one quarter to include in accomplishments.',
+            ]);
+        }
+        $data['included_quarters'] = $quarters;
+        $data['evaluation_quarter'] = IpcrIncludedQuarters::primaryQuarter($quarters);
+        $data['period_label'] = IpcrIncludedQuarters::periodLabel((int) $data['evaluation_year'], $quarters);
         $this->assertWeights($data['entries'], false);
 
         $template = DB::transaction(function () use ($request, $data) {
@@ -41,6 +48,7 @@ class FormTemplateController extends Controller
                 'created_by' => $request->user()->id,
                 'evaluation_year' => $data['evaluation_year'],
                 'evaluation_quarter' => $data['evaluation_quarter'],
+                'included_quarters' => $data['included_quarters'],
                 'period_label' => $data['period_label'],
                 'title' => $data['title'] ?: $this->defaultTitle($data),
                 'status' => FormTemplateStatus::Draft,
@@ -60,22 +68,8 @@ class FormTemplateController extends Controller
 
     public function show(IpcrFormTemplate $form): Response
     {
-        $form->load(['items', 'supervisors:id,name,email']);
+        $form->load('items');
         $totals = CommitmentWeightRules::totalsFromRows($form->items);
-        $assignedIds = $form->supervisors->pluck('id')->all();
-
-        $supervisors = User::query()
-            ->where('role', UserRole::Supervisor)
-            ->withCount(['supervisees as employee_count' => fn ($q) => $q->where('role', UserRole::Employee)])
-            ->orderBy('name')
-            ->get(['id', 'name', 'email'])
-            ->map(fn (User $supervisor) => [
-                'id' => $supervisor->id,
-                'name' => $supervisor->name,
-                'email' => $supervisor->email,
-                'employee_count' => (int) $supervisor->employee_count,
-                'assigned' => in_array($supervisor->id, $assignedIds, true),
-            ]);
 
         return Inertia::render('Admin/Forms/Show', [
             'template' => [
@@ -85,15 +79,13 @@ class FormTemplateController extends Controller
                     $totals['core'],
                     $totals['strategic'],
                 ),
-                'team_size' => $form->assignedEmployeeCount(),
             ],
-            'supervisors' => $supervisors,
         ]);
     }
 
     public function edit(IpcrFormTemplate $form): Response
     {
-        $form->load(['items', 'supervisors:id,name,email']);
+        $form->load('items');
         $totals = CommitmentWeightRules::totalsFromRows($form->items);
 
         return Inertia::render('Admin/Forms/Edit', [
@@ -112,13 +104,22 @@ class FormTemplateController extends Controller
     public function update(Request $request, IpcrFormTemplate $form): RedirectResponse
     {
         $data = $this->validated($request);
-        $mustMeetSplit = $form->supervisors()->exists();
-        $this->assertWeights($data['entries'], $mustMeetSplit);
+        $quarters = IpcrIncludedQuarters::normalize($data['included_quarters'] ?? []);
+        if ($quarters === []) {
+            throw ValidationException::withMessages([
+                'included_quarters' => 'Select at least one quarter to include in accomplishments.',
+            ]);
+        }
+        $data['included_quarters'] = $quarters;
+        $data['evaluation_quarter'] = IpcrIncludedQuarters::primaryQuarter($quarters);
+        $data['period_label'] = IpcrIncludedQuarters::periodLabel((int) $data['evaluation_year'], $quarters);
+        $this->assertWeights($data['entries'], false);
 
         DB::transaction(function () use ($request, $form, $data) {
             $form->update([
                 'evaluation_year' => $data['evaluation_year'],
                 'evaluation_quarter' => $data['evaluation_quarter'],
+                'included_quarters' => $data['included_quarters'],
                 'period_label' => $data['period_label'],
                 'title' => $data['title'] ?: $this->defaultTitle($data),
             ]);
@@ -127,77 +128,35 @@ class FormTemplateController extends Controller
             AuditLogger::log($request->user()->id, 'ipcr.form.updated', $form, null, $request);
         });
 
-        $form->load('supervisors', 'items');
-        $supervisorIds = $form->supervisors->pluck('id')->map(fn ($id) => (int) $id)->all();
-
-        if ($supervisorIds !== []) {
-            app(IpcrFormTemplateProvisioner::class)->assign($form, $supervisorIds, false);
-        }
-
         return redirect()
             ->route('admin.forms.show', $form)
-            ->with('status', 'IPCR form saved.');
-    }
-
-    public function assign(Request $request, IpcrFormTemplate $form): RedirectResponse
-    {
-        $data = $request->validate([
-            'supervisor_ids' => ['present', 'array'],
-            'supervisor_ids.*' => [
-                'integer',
-                Rule::exists('users', 'id')->where(fn ($q) => $q->where('role', UserRole::Supervisor)),
-            ],
-        ]);
-
-        $supervisorIds = array_values(array_unique(array_map('intval', $data['supervisor_ids'])));
-        $form->load('items');
-
-        if ($supervisorIds !== []) {
-            $this->assertWeights($form->items->map(fn (IpcrFormTemplateItem $item) => [
-                'function_type' => $item->function_type,
-                'weight' => $item->weight,
-            ])->all(), true);
-            $this->assertSupervisorsAvailableForPeriod($form, $supervisorIds);
-        }
-
-        app(IpcrFormTemplateProvisioner::class)->assign($form, $supervisorIds);
-        AuditLogger::log($request->user()->id, 'ipcr.form.assigned', $form, [
-            'supervisor_ids' => $supervisorIds,
-        ], $request);
-
-        $message = $supervisorIds === []
-            ? 'IPCR form unassigned from all supervisors.'
-            : 'IPCR form assigned to the selected supervisors’ teams.';
-
-        return back()->with('status', $message);
+            ->with('status', 'IPCR form saved. Existing employee copies are not changed.');
     }
 
     public function destroy(Request $request, IpcrFormTemplate $form): RedirectResponse
     {
-        $locked = $form->commitments()
-            ->whereIn('status', [\App\Enums\CommitmentStatus::InReview, \App\Enums\CommitmentStatus::Approved])
-            ->exists();
+        $id = $form->id;
 
-        if ($locked) {
-            return back()->withErrors([
-                'form' => 'This form cannot be deleted because employees already have it in review or approved.',
-            ]);
-        }
+        DB::transaction(function () use ($form) {
+            Commitment::query()
+                ->where('ipcr_form_template_id', $form->id)
+                ->update([
+                    'ipcr_form_template_id' => null,
+                    'ipcr_form_template_item_id' => null,
+                ]);
 
-        $form->commitments()->whereIn('status', [
-            \App\Enums\CommitmentStatus::Draft,
-            \App\Enums\CommitmentStatus::Returned,
-        ])->each(function ($commitment) {
-            $commitment->accomplishments()->delete();
-            $commitment->delete();
+            IpcrSubmission::query()
+                ->where('ipcr_form_template_id', $form->id)
+                ->update(['ipcr_form_template_id' => null]);
+
+            $form->delete();
         });
 
-        $form->delete();
-        AuditLogger::log($request->user()->id, 'ipcr.form.deleted', null, ['id' => $form->id], $request);
+        AuditLogger::log($request->user()->id, 'ipcr.form.deleted', null, ['id' => $id], $request);
 
         return redirect()
             ->route('dashboard', ['tab' => 'forms'])
-            ->with('status', 'IPCR form removed.');
+            ->with('status', 'IPCR form removed. Employee copies were kept.');
     }
 
     /**
@@ -209,7 +168,7 @@ class FormTemplateController extends Controller
         $quarter = (int) ceil(now()->month / 3);
 
         $templates = IpcrFormTemplate::query()
-            ->with(['supervisors:id,name,email', 'items'])
+            ->with('items')
             ->withCount('items')
             ->orderByDesc('evaluation_year')
             ->orderByDesc('evaluation_quarter')
@@ -225,7 +184,6 @@ class FormTemplateController extends Controller
                         $totals['core'],
                         $totals['strategic'],
                     ),
-                    'team_size' => $template->assignedEmployeeCount(),
                 ];
             })
             ->values()
@@ -259,11 +217,14 @@ class FormTemplateController extends Controller
         $data = $request->validate([
             'title' => ['nullable', 'string', 'max:255'],
             'evaluation_year' => ['required', 'integer', 'min:2000', 'max:2100'],
-            'evaluation_quarter' => ['required', 'integer', 'min:1', 'max:4'],
-            'period_label' => ['required', 'string', 'max:32'],
+            'included_quarters' => ['required', 'array', 'min:1'],
+            'included_quarters.*' => ['integer', 'min:1', 'max:4'],
+            'period_label' => ['nullable', 'string', 'max:32'],
             'entries' => ['required', 'array', 'min:1'],
             'entries.*.id' => ['nullable', 'integer'],
             'entries.*.function_type' => ['required', 'in:core,strategic'],
+            'entries.*.function_group' => ['nullable', 'integer', 'min:0'],
+            'entries.*.sort_order' => ['nullable', 'integer', 'min:0'],
             'entries.*.title' => ['nullable', 'string', 'max:255'],
             'entries.*.description' => ['nullable', 'string', 'max:8000'],
             'entries.*.weight' => ['nullable', 'numeric', 'min:0', 'max:100'],
@@ -272,28 +233,6 @@ class FormTemplateController extends Controller
         ]);
 
         return $data;
-    }
-
-    /**
-     * @param  list<int>  $supervisorIds
-     */
-    private function assertSupervisorsAvailableForPeriod(IpcrFormTemplate $form, array $supervisorIds): void
-    {
-        $conflicts = User::query()
-            ->whereIn('id', $supervisorIds)
-            ->whereHas('assignedIpcrFormTemplates', function ($q) use ($form) {
-                $q->where('ipcr_form_templates.id', '!=', $form->id)
-                    ->where('evaluation_year', $form->evaluation_year)
-                    ->where('evaluation_quarter', $form->evaluation_quarter);
-            })
-            ->orderBy('name')
-            ->pluck('name');
-
-        if ($conflicts->isNotEmpty()) {
-            throw ValidationException::withMessages([
-                'supervisor_ids' => 'Already assigned an IPCR form for this period: '.$conflicts->implode(', ').'.',
-            ]);
-        }
     }
 
     /**
@@ -322,7 +261,7 @@ class FormTemplateController extends Controller
             if (! CommitmentWeightRules::meetsSpmsSplit($core, $strategic)) {
                 throw ValidationException::withMessages([
                     'entries' => sprintf(
-                        'Before assigning, the form must total exactly %.0f%% core and %.0f%% strategic (currently %.2f%% / %.2f%%).',
+                        'The form must total exactly %.0f%% core and %.0f%% strategic (currently %.2f%% / %.2f%%).',
                         CommitmentWeightRules::CORE_CAP,
                         CommitmentWeightRules::STRATEGIC_CAP,
                         $core,
@@ -344,6 +283,7 @@ class FormTemplateController extends Controller
         foreach (array_values($entries) as $index => $entry) {
             $payload = [
                 'sort_order' => $index,
+                'function_group' => (int) ($entry['function_group'] ?? $index),
                 'function_type' => $entry['function_type'],
                 'title' => filled($entry['title'] ?? null) ? $entry['title'] : null,
                 'description' => $entry['description'] ?? null,

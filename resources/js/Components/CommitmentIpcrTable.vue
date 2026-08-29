@@ -1,4 +1,5 @@
 <script setup>
+import { groupFormRows } from '@/utils/ipcrFormEntries';
 import { computed } from 'vue';
 
 const props = defineProps({
@@ -14,22 +15,14 @@ const props = defineProps({
 
 const sortedCommitments = computed(() =>
     [...(props.commitments || [])].sort((a, b) => {
-        const typeOrder = { core: 0, strategic: 1 };
-        const ta = typeOrder[a.function_type] ?? 9;
-        const tb = typeOrder[b.function_type] ?? 9;
+        const ta = a.function_type === 'core' ? 0 : 1;
+        const tb = b.function_type === 'core' ? 0 : 1;
         if (ta !== tb) return ta - tb;
-
-        const titleCmp = (a.title || '').localeCompare(b.title || '');
-        if (titleCmp !== 0) return titleCmp;
-
+        const so = Number(a.sort_order ?? 0) - Number(b.sort_order ?? 0);
+        if (so !== 0) return so;
         return Number(a.id || 0) - Number(b.id || 0);
     }),
 );
-
-function functionTitleKey(c) {
-    const title = (c.title || '').trim();
-    return title || `__blank_${c.id ?? Math.random()}`;
-}
 
 function indicatorText(c) {
     return (c?.description ?? '').trim();
@@ -42,27 +35,11 @@ function displayValue(value) {
 }
 
 function buildSectionLayout(functionType) {
-    const commitments = sortedCommitments.value.filter((c) => c.function_type === functionType);
-    const order = [];
-    const map = new Map();
-
-    for (const c of commitments) {
-        const key = functionTitleKey(c);
-        if (!map.has(key)) {
-            map.set(key, { title: (c.title || '').trim(), commitments: [] });
-            order.push(key);
-        }
-        map.get(key).commitments.push(c);
-    }
-
-    return order.map((key) => {
-        const group = map.get(key);
-        return {
-            title: group.title,
-            commitments: group.commitments,
-            rowCount: group.commitments.length,
-        };
-    });
+    return groupFormRows(sortedCommitments.value)[functionType].map((group) => ({
+        title: (group.title || '').trim(),
+        commitments: group.items,
+        rowCount: group.items.length,
+    }));
 }
 
 const sectionLayout = computed(() => ({

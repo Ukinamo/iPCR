@@ -9,7 +9,9 @@ import PrimaryButton from '@/Components/PrimaryButton.vue';
 import ReviewTransferPanel from '@/Components/ReviewTransferPanel.vue';
 import SecondaryButton from '@/Components/SecondaryButton.vue';
 import TextInput from '@/Components/TextInput.vue';
-import { formatWholeNumber, roundWholeNumberForSubmit } from '@/utils/numberFormat';
+import { groupFormRows } from '@/utils/ipcrFormEntries';
+import { formatWholeNumber, roundWholeNumberForSubmit, setWholeNumberField, wholeNumberOrEmpty } from '@/utils/numberFormat';
+import { isRateableRow, parseNullableNum } from '@/utils/ipcrRating';
 import { Head, Link, useForm } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
 
@@ -46,25 +48,24 @@ function mapCommitmentToRow(c) {
         _uid: uid(),
         id: c.id,
         function_type: c.function_type === 'strategic' ? 'strategic' : 'core',
+        function_group: c.function_group ?? 0,
         title: c.title ?? '',
         description: c.description ?? '',
         weight: c.weight ?? null,
         annual_office_target: c.annual_office_target ?? '',
         individual_annual_targets: c.individual_annual_targets ?? '',
-        rating_quality: c.weight != null ? (c.rating_quality ?? suggested ?? 3) : null,
-        rating_efficiency: c.weight != null ? (c.rating_efficiency ?? suggested ?? 3) : null,
-        rating_timeliness: c.weight != null ? (c.rating_timeliness ?? suggested ?? 3) : null,
-        rating_q3_target: c.rating_q3_target ?? '',
-        rating_q3_actual: c.rating_q3_actual ?? '',
-        rating_q4_target: c.rating_q4_target ?? '',
-        rating_q4_actual: c.rating_q4_actual ?? '',
+        rating_quality: isRateableRow(c) ? (c.rating_quality ?? suggested ?? 3) : null,
+        rating_efficiency: isRateableRow(c) ? (c.rating_efficiency ?? suggested ?? 3) : null,
+        rating_timeliness: isRateableRow(c) ? (c.rating_timeliness ?? suggested ?? 3) : null,
+        rating_q3_target: wholeNumberOrEmpty(c.rating_q3_target),
+        rating_q3_actual: wholeNumberOrEmpty(c.rating_q3_actual),
+        rating_q4_target: wholeNumberOrEmpty(c.rating_q4_target),
+        rating_q4_actual: wholeNumberOrEmpty(c.rating_q4_actual),
         remarks: c.remarks ?? '',
     };
 }
 
-const sortedCommitments = computed(() =>
-    [...(props.submission?.commitments || [])].sort((a, b) => a.id - b.id),
-);
+const sortedCommitments = computed(() => [...(props.submission?.commitments || [])]);
 
 const packageEvidence = computed(() => {
     const seen = new Set();
@@ -138,23 +139,7 @@ const reviewForm = useForm({
     commitments: sortedCommitments.value.map(mapCommitmentToRow),
 });
 
-const editableGroups = computed(() => {
-    const groups = { core: [], strategic: [] };
-    const maps = { core: new Map(), strategic: new Map() };
-
-    reviewForm.commitments.forEach((row, index) => {
-        const type = row.function_type === 'strategic' ? 'strategic' : 'core';
-        const key = (row.title || '').trim() || `__blank_${type}_${index}`;
-        if (!maps[type].has(key)) {
-            const group = { key, title: row.title || '', indexes: [] };
-            maps[type].set(key, group);
-            groups[type].push(group);
-        }
-        maps[type].get(key).indexes.push(index);
-    });
-
-    return groups;
-});
+const editableGroups = computed(() => groupFormRows(reviewForm.commitments));
 
 function rowPreview(row) {
     const ratio = accomplishmentRatio(
@@ -163,21 +148,28 @@ function rowPreview(row) {
         row.rating_q4_target,
         row.rating_q4_actual,
     );
-    if (row.weight == null || row.weight === '') {
-        return { ...ratio, q: null, e: null, t: null, avg: null, weighted: null };
+    if (!isRateableRow(row)) {
+        return { ...ratio, q: null, e: null, t: null, avg: null, weighted: null, remarks: null };
     }
-    const q = Number(row.rating_quality);
-    const e = Number(row.rating_efficiency);
-    const t = Number(row.rating_timeliness);
-    if (!Number.isFinite(q) || !Number.isFinite(e) || !Number.isFinite(t)) {
-        return { ...ratio, q: null, e: null, t: null, avg: null, weighted: null };
+    const q = parseNullableNum(row.rating_quality);
+    const e = parseNullableNum(row.rating_efficiency);
+    const t = parseNullableNum(row.rating_timeliness);
+    if (q == null || e == null || t == null) {
+        return { ...ratio, q: null, e: null, t: null, avg: null, weighted: null, remarks: null };
     }
     const avg = (q + e + t) / 3;
-    const w = Number(row.weight) / 100;
-    return { ...ratio, q, e, t, avg, weighted: avg * w };
+    const weightNum = row.weight === '' || row.weight == null ? null : Number(row.weight);
+    const weighted = Number.isFinite(weightNum) ? avg * (weightNum / 100) : null;
+    return { ...ratio, q, e, t, avg, weighted, remarks: weighted != null ? weighted : avg };
 }
 
 function applySuggestedRatings(row) {
+    if (!isRateableRow(row)) {
+        row.rating_quality = null;
+        row.rating_efficiency = null;
+        row.rating_timeliness = null;
+        return;
+    }
     const suggested = suggestedRating(
         row.rating_q3_target,
         row.rating_q3_actual,
@@ -192,8 +184,13 @@ function applySuggestedRatings(row) {
     row.rating_timeliness = suggested;
 }
 
+function onWholeAccomplishment(row, key, rawValue) {
+    setWholeNumberField(row, key, rawValue);
+    applySuggestedRatings(row);
+}
+
 function onWeightChange(row) {
-    if (row.weight === '' || row.weight == null) {
+    if (!isRateableRow(row)) {
         row.rating_quality = null;
         row.rating_efficiency = null;
         row.rating_timeliness = null;
@@ -260,6 +257,7 @@ function addItemRow(group) {
         _uid: uid(),
         id: null,
         function_type: first.function_type,
+        function_group: first.function_group,
         title: first.title,
         description: '',
         weight: null,
@@ -283,11 +281,24 @@ function removeItemRow(index) {
     reviewForm.commitments.splice(index, 1);
 }
 
+function nextFunctionGroup() {
+    const nums = reviewForm.commitments
+        .map((row) => Number(row.function_group))
+        .filter((n) => Number.isFinite(n));
+    return (nums.length ? Math.max(...nums) : -1) + 1;
+}
+
 function addFunctionEntry(type) {
-    reviewForm.commitments.push({
+    const last = reviewForm.commitments
+        .map((row, index) => ({ row, index }))
+        .filter((x) => x.row.function_type === type)
+        .at(-1);
+    const insertAt = last ? last.index + 1 : reviewForm.commitments.length;
+    reviewForm.commitments.splice(insertAt, 0, {
         _uid: uid(),
         id: null,
         function_type: type,
+        function_group: nextFunctionGroup(),
         title: '',
         description: '',
         weight: null,
@@ -321,7 +332,7 @@ function removeFunctionGroup(group) {
 }
 
 function ratedAverageTotal(commitments) {
-    const rated = commitments.filter((c) => c.weight != null && c.rating_average != null);
+    const rated = commitments.filter((c) => isRateableRow(c) && c.rating_average != null);
     if (!rated.length) {
         return '—';
     }
@@ -343,30 +354,11 @@ function indicatorLines(c) {
     return lines.length ? lines : [''];
 }
 
-function functionTitleKey(c) {
-    const title = (c.title || '').trim();
-    return title || `__blank_${c.id ?? Math.random()}`;
-}
-
 function buildSectionLayout(functionType) {
-    const commitments = sortedCommitments.value.filter((c) => c.function_type === functionType);
-    const order = [];
-    const map = new Map();
-
-    for (const c of commitments) {
-        const key = functionTitleKey(c);
-        if (!map.has(key)) {
-            map.set(key, { title: (c.title || '').trim(), commitments: [] });
-            order.push(key);
-        }
-        map.get(key).commitments.push(c);
-    }
-
-    return order.map((key) => {
-        const group = map.get(key);
+    return groupFormRows(sortedCommitments.value)[functionType].map((group) => {
         const rows = [];
 
-        for (const c of group.commitments) {
+        for (const c of group.items) {
             const lines = indicatorLines(c);
             lines.forEach((line, lineIndex) => {
                 rows.push({
@@ -379,8 +371,8 @@ function buildSectionLayout(functionType) {
         }
 
         return {
-            title: group.title,
-            commitments: group.commitments,
+            title: (group.title || '').trim(),
+            commitments: group.items,
             rows,
             rowCount: rows.length,
         };
@@ -447,10 +439,12 @@ function mergeCommitmentsFromProps(previousRows) {
 }
 
 function buildCommitmentsPayload(data) {
-    return data.commitments.map((r) => {
+    return data.commitments.map((r, index) => {
         const base = {
             id: r.id || null,
             function_type: r.function_type,
+            function_group: Number.isFinite(Number(r.function_group)) ? Number(r.function_group) : index,
+            sort_order: index,
             title: r.title,
             description: r.description || null,
             weight: r.weight === '' || r.weight == null ? null : Number(r.weight),
@@ -466,7 +460,7 @@ function buildCommitmentsPayload(data) {
             return base;
         }
 
-        if (base.weight == null) {
+        if (!isRateableRow(base)) {
             return {
                 ...base,
                 rating_quality: null,
@@ -817,7 +811,7 @@ function badge(status) {
                                                     {{ rowPreview(reviewForm.commitments[rowIndex]).avg != null ? rowPreview(reviewForm.commitments[rowIndex]).avg.toFixed(2) : '—' }}
                                                 </td>
                                                 <td class="border border-slate-300 px-2 py-1 text-center font-semibold text-slate-500">
-                                                    {{ rowPreview(reviewForm.commitments[rowIndex]).weighted != null ? rowPreview(reviewForm.commitments[rowIndex]).weighted.toFixed(2) : '—' }}
+                                                    {{ rowPreview(reviewForm.commitments[rowIndex]).remarks != null ? rowPreview(reviewForm.commitments[rowIndex]).remarks.toFixed(2) : '—' }}
                                                 </td>
                                             </tr>
                                         </template>
@@ -887,42 +881,42 @@ function badge(status) {
                                                 </td>
                                                 <td class="border border-slate-300 px-1 py-1">
                                                     <TextInput
-                                                        v-model="reviewForm.commitments[rowIndex].rating_q3_target"
+                                                        :model-value="reviewForm.commitments[rowIndex].rating_q3_target"
                                                         type="number"
                                                         step="1"
                                                         min="0"
                                                         class="w-16 text-xs"
-                                                        @change="applySuggestedRatings(reviewForm.commitments[rowIndex])"
+                                                        @update:model-value="onWholeAccomplishment(reviewForm.commitments[rowIndex], 'rating_q3_target', $event)"
                                                     />
                                                 </td>
                                                 <td class="border border-slate-300 px-1 py-1">
                                                     <TextInput
-                                                        v-model="reviewForm.commitments[rowIndex].rating_q3_actual"
+                                                        :model-value="reviewForm.commitments[rowIndex].rating_q3_actual"
                                                         type="number"
                                                         step="1"
                                                         min="0"
                                                         class="w-16 text-xs"
-                                                        @change="applySuggestedRatings(reviewForm.commitments[rowIndex])"
+                                                        @update:model-value="onWholeAccomplishment(reviewForm.commitments[rowIndex], 'rating_q3_actual', $event)"
                                                     />
                                                 </td>
                                                 <td class="border border-slate-300 px-1 py-1">
                                                     <TextInput
-                                                        v-model="reviewForm.commitments[rowIndex].rating_q4_target"
+                                                        :model-value="reviewForm.commitments[rowIndex].rating_q4_target"
                                                         type="number"
                                                         step="1"
                                                         min="0"
                                                         class="w-16 text-xs"
-                                                        @change="applySuggestedRatings(reviewForm.commitments[rowIndex])"
+                                                        @update:model-value="onWholeAccomplishment(reviewForm.commitments[rowIndex], 'rating_q4_target', $event)"
                                                     />
                                                 </td>
                                                 <td class="border border-slate-300 px-1 py-1">
                                                     <TextInput
-                                                        v-model="reviewForm.commitments[rowIndex].rating_q4_actual"
+                                                        :model-value="reviewForm.commitments[rowIndex].rating_q4_actual"
                                                         type="number"
                                                         step="1"
                                                         min="0"
                                                         class="w-16 text-xs"
-                                                        @change="applySuggestedRatings(reviewForm.commitments[rowIndex])"
+                                                        @update:model-value="onWholeAccomplishment(reviewForm.commitments[rowIndex], 'rating_q4_actual', $event)"
                                                     />
                                                 </td>
                                                 <td class="border border-slate-300 px-2 py-1 text-center text-slate-700">
@@ -936,10 +930,10 @@ function badge(status) {
                                                 </td>
                                                 <td class="border border-slate-300 px-1 py-1">
                                                     <TextInput
-                                                        v-if="reviewForm.commitments[rowIndex].weight != null && reviewForm.commitments[rowIndex].weight !== ''"
+                                                        v-if="isRateableRow(reviewForm.commitments[rowIndex])"
                                                         v-model="reviewForm.commitments[rowIndex].rating_quality"
                                                         type="number"
-                                                        min="1"
+                                                        min="0"
                                                         max="5"
                                                         class="w-14 text-xs"
                                                     />
@@ -947,10 +941,10 @@ function badge(status) {
                                                 </td>
                                                 <td class="border border-slate-300 px-1 py-1">
                                                     <TextInput
-                                                        v-if="reviewForm.commitments[rowIndex].weight != null && reviewForm.commitments[rowIndex].weight !== ''"
+                                                        v-if="isRateableRow(reviewForm.commitments[rowIndex])"
                                                         v-model="reviewForm.commitments[rowIndex].rating_efficiency"
                                                         type="number"
-                                                        min="1"
+                                                        min="0"
                                                         max="5"
                                                         class="w-14 text-xs"
                                                     />
@@ -958,10 +952,10 @@ function badge(status) {
                                                 </td>
                                                 <td class="border border-slate-300 px-1 py-1">
                                                     <TextInput
-                                                        v-if="reviewForm.commitments[rowIndex].weight != null && reviewForm.commitments[rowIndex].weight !== ''"
+                                                        v-if="isRateableRow(reviewForm.commitments[rowIndex])"
                                                         v-model="reviewForm.commitments[rowIndex].rating_timeliness"
                                                         type="number"
-                                                        min="1"
+                                                        min="0"
                                                         max="5"
                                                         class="w-14 text-xs"
                                                     />
@@ -971,7 +965,7 @@ function badge(status) {
                                                     {{ rowPreview(reviewForm.commitments[rowIndex]).avg != null ? rowPreview(reviewForm.commitments[rowIndex]).avg.toFixed(2) : '—' }}
                                                 </td>
                                                 <td class="border border-slate-300 px-2 py-1 text-center font-semibold text-amber-800">
-                                                    {{ rowPreview(reviewForm.commitments[rowIndex]).weighted != null ? rowPreview(reviewForm.commitments[rowIndex]).weighted.toFixed(2) : '—' }}
+                                                    {{ rowPreview(reviewForm.commitments[rowIndex]).remarks != null ? rowPreview(reviewForm.commitments[rowIndex]).remarks.toFixed(2) : '—' }}
                                                 </td>
                                             </tr>
                                         </template>
@@ -1052,13 +1046,13 @@ function badge(status) {
                                                         {{ formatAccomplishmentPercent(rowPreview(ratingRowReadonly(row.commitment.id)).percent) }}
                                                     </td>
                                                     <td :rowspan="row.lineCount" class="border border-slate-300 px-2 py-1 text-center text-slate-700">
-                                                        {{ row.commitment.weight != null ? (row.commitment.rating_quality ?? '—') : '—' }}
+                                                        {{ isRateableRow(row.commitment) ? (row.commitment.rating_quality ?? '—') : '—' }}
                                                     </td>
                                                     <td :rowspan="row.lineCount" class="border border-slate-300 px-2 py-1 text-center text-slate-700">
-                                                        {{ row.commitment.weight != null ? (row.commitment.rating_efficiency ?? '—') : '—' }}
+                                                        {{ isRateableRow(row.commitment) ? (row.commitment.rating_efficiency ?? '—') : '—' }}
                                                     </td>
                                                     <td :rowspan="row.lineCount" class="border border-slate-300 px-2 py-1 text-center text-slate-700">
-                                                        {{ row.commitment.weight != null ? (row.commitment.rating_timeliness ?? '—') : '—' }}
+                                                        {{ isRateableRow(row.commitment) ? (row.commitment.rating_timeliness ?? '—') : '—' }}
                                                     </td>
                                                     <td :rowspan="row.lineCount" class="border border-slate-300 px-2 py-1 text-center font-semibold text-slate-800">
                                                         {{ rowPreview(ratingRowReadonly(row.commitment.id)).avg != null ? rowPreview(ratingRowReadonly(row.commitment.id)).avg.toFixed(2) : (row.commitment.rating_average != null ? Number(row.commitment.rating_average).toFixed(2) : '—') }}

@@ -1,7 +1,6 @@
 <script setup>
 import AdminAnalyticsPanel from '@/Components/AdminAnalyticsPanel.vue';
 import AdminIpcrFormsPanel from '@/Components/AdminIpcrFormsPanel.vue';
-import AdminTransferRequestsPanel from '@/Components/AdminTransferRequestsPanel.vue';
 import AppIcon from '@/Components/AppIcon.vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import RatingReportList from '@/Components/RatingReportList.vue';
@@ -24,15 +23,23 @@ defineProps({
         type: Object,
         default: () => ({}),
     },
-    pendingTransferCount: {
-        type: Number,
-        default: 0,
-    },
-    pendingTransferRequests: {
+    pendingReviews: {
         type: Array,
         default: () => [],
     },
-    recentTransferRequests: {
+    pendingReviewCount: {
+        type: Number,
+        default: 0,
+    },
+    pendingRegisterReports: {
+        type: Array,
+        default: () => [],
+    },
+    pendingRegisterReportCount: {
+        type: Number,
+        default: 0,
+    },
+    approvedRegisterReports: {
         type: Array,
         default: () => [],
     },
@@ -50,13 +57,13 @@ defineProps({
     },
 });
 
-const tab = ref('users');
+const tab = ref('reviews');
 
 onMounted(() => {
     const params = new URLSearchParams(window.location.search);
     const requestedTab = params.get('tab');
 
-    if (['users', 'forms', 'reports', 'analytics', 'transfers'].includes(requestedTab)) {
+    if (['users', 'forms', 'reports', 'analytics', 'reviews', 'registers'].includes(requestedTab)) {
         tab.value = requestedTab;
     }
 });
@@ -70,11 +77,12 @@ const statCards = [
 ];
 
 const tabs = [
+    { id: 'reviews', label: 'IPCR Reviews', icon: 'clipboard' },
+    { id: 'registers', label: 'Supervisor reports', icon: 'document-chart-bar' },
     { id: 'users', label: 'User Management', icon: 'users' },
     { id: 'forms', label: 'IPCR Forms', icon: 'clipboard' },
     { id: 'reports', label: 'Reports', icon: 'document-chart-bar' },
     { id: 'analytics', label: 'Analytics', icon: 'chart-bar' },
-    { id: 'transfers', label: 'Transfer Requests', icon: 'users' },
 ];
 
 function roleBadge(role) {
@@ -87,6 +95,24 @@ function statusBadge(status) {
     if (status === 'active') return 'bg-emerald-50 text-emerald-800 ring-emerald-100';
     if (status === 'pending') return 'bg-amber-50 text-amber-900 ring-amber-100';
     return 'bg-slate-100 text-slate-700 ring-slate-200';
+}
+
+function periodLabel(s) {
+    const qs = (s.included_quarters || []).map((q) => Number(q)).filter((q) => q >= 1 && q <= 4);
+    const list = qs.length ? [...new Set(qs)].sort((a, b) => a - b) : [s.evaluation_quarter].filter(Boolean);
+    if (!list.length) {
+        return `Q${s.evaluation_quarter} ${s.evaluation_year}`;
+    }
+    return list.map((q) => `Q${q}`).join(', ') + ` ${s.evaluation_year}`;
+}
+
+function formatWhen(iso) {
+    if (!iso) return '';
+    try {
+        return new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+    } catch {
+        return iso;
+    }
 }
 
 function destroyUser(id) {
@@ -132,17 +158,31 @@ function destroyUser(id) {
                     </div>
                 </div>
 
-                <div v-if="pendingTransferCount > 0" class="flex items-start gap-3 rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-950">
+                <div v-if="pendingReviewCount > 0" class="flex items-start gap-3 rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-950">
                     <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-100 text-blue-700">
-                        <AppIcon name="users" class="h-5 w-5" />
+                        <AppIcon name="clipboard" class="h-5 w-5" />
                     </span>
                     <p>
-                        <span class="font-semibold">{{ pendingTransferCount }} supervisor transfer request(s)</span>
-                        need your approval.
-                        <Link :href="`${route('dashboard')}?tab=transfers`" class="ml-1 inline-flex items-center gap-1 font-semibold text-blue-900 underline hover:text-blue-950">
-                            Review transfers
+                        <span class="font-semibold">{{ pendingReviewCount }} IPCR package(s)</span>
+                        waiting for administrator approval.
+                        <button type="button" class="ml-1 inline-flex items-center gap-1 font-semibold text-blue-900 underline hover:text-blue-950" @click="tab = 'reviews'">
+                            Review now
                             <AppIcon name="arrow-top-right" class="h-3.5 w-3.5" />
-                        </Link>
+                        </button>
+                    </p>
+                </div>
+
+                <div v-if="pendingRegisterReportCount > 0" class="flex items-start gap-3 rounded-lg border border-cyan-200 bg-cyan-50 p-4 text-sm text-cyan-950">
+                    <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-cyan-100 text-cyan-700">
+                        <AppIcon name="document-chart-bar" class="h-5 w-5" />
+                    </span>
+                    <p>
+                        <span class="font-semibold">{{ pendingRegisterReportCount }} supervisor report(s)</span>
+                        waiting for administrator review.
+                        <button type="button" class="ml-1 inline-flex items-center gap-1 font-semibold text-cyan-900 underline hover:text-cyan-950" @click="tab = 'registers'">
+                            Review now
+                            <AppIcon name="arrow-top-right" class="h-3.5 w-3.5" />
+                        </button>
                     </p>
                 </div>
 
@@ -152,7 +192,7 @@ function destroyUser(id) {
                     </span>
                     <p>
                         <span class="font-semibold">{{ stats.pendingRegistrations }} registration(s)</span>
-                        waiting for supervisor assignment.
+                        waiting for approval.
                         <Link :href="route('admin.users.pending')" class="ml-1 inline-flex items-center gap-1 font-semibold text-amber-900 underline hover:text-amber-950">
                             Review now
                             <AppIcon name="arrow-top-right" class="h-3.5 w-3.5" />
@@ -170,15 +210,177 @@ function destroyUser(id) {
                         @click="tab = item.id"
                     >
                         <AppIcon :name="item.icon" class="h-4 w-4 shrink-0" />
-                        <span class="sm:hidden">{{ item.id === 'users' ? 'Users' : item.id === 'forms' ? 'Forms' : item.id === 'reports' ? 'Reports' : item.id === 'analytics' ? 'Analytics' : 'Transfers' }}</span>
+                        <span class="sm:hidden">{{ item.id === 'users' ? 'Users' : item.id === 'forms' ? 'Forms' : item.id === 'reports' ? 'Reports' : item.id === 'analytics' ? 'Analytics' : item.id === 'registers' ? 'Registers' : 'Reviews' }}</span>
                         <span class="hidden sm:inline">{{ item.label }}</span>
                         <span
-                            v-if="item.id === 'transfers' && pendingTransferCount > 0"
+                            v-if="item.id === 'reviews' && pendingReviewCount > 0"
                             class="rounded-full bg-amber-600 px-2 py-0.5 text-xs font-bold text-white"
                         >
-                            {{ pendingTransferCount }}
+                            {{ pendingReviewCount }}
+                        </span>
+                        <span
+                            v-if="item.id === 'registers' && pendingRegisterReportCount > 0"
+                            class="rounded-full bg-cyan-700 px-2 py-0.5 text-xs font-bold text-white"
+                        >
+                            {{ pendingRegisterReportCount }}
                         </span>
                     </button>
+                </div>
+
+                <div v-show="tab === 'reviews'" class="grid gap-4 lg:grid-cols-12 lg:items-start">
+                    <div class="rounded-lg border border-slate-200 bg-white shadow-sm lg:col-span-5">
+                        <div class="flex items-center justify-between gap-3 border-b border-slate-100 px-3 py-2">
+                            <h3 class="text-sm font-semibold text-slate-800">Pending review</h3>
+                            <p class="text-xs text-slate-500">{{ pendingReviews.length }} package(s)</p>
+                        </div>
+
+                        <div v-if="!pendingReviews.length" class="px-3 py-4 text-center text-xs text-slate-500">
+                            No packages waiting for review.
+                        </div>
+
+                        <table v-else class="w-full table-fixed divide-y divide-slate-200 text-xs">
+                            <thead class="bg-slate-50 text-left font-semibold uppercase tracking-wide text-slate-500">
+                                <tr>
+                                    <th class="px-3 py-2">Employee</th>
+                                    <th class="w-[28%] px-3 py-2">Period</th>
+                                    <th class="w-[22%] px-3 py-2 text-right">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-100">
+                                <tr v-for="s in pendingReviews" :key="s.id" class="hover:bg-slate-50/60">
+                                    <td class="px-3 py-1.5">
+                                        <p class="break-words font-medium text-slate-900">{{ s.employee?.name }}</p>
+                                        <p class="break-words text-[10px] text-slate-500">{{ s.title || 'IPCR form' }}</p>
+                                    </td>
+                                    <td class="px-3 py-1.5 text-slate-600">
+                                        <p class="break-words">{{ periodLabel(s) }}</p>
+                                        <p class="break-words text-[10px] text-slate-400">{{ formatWhen(s.submitted_at) }}</p>
+                                    </td>
+                                    <td class="px-3 py-1.5">
+                                        <div class="flex flex-wrap justify-end gap-1">
+                                            <Link
+                                                :href="`${route('admin.submissions.show', s.id)}?view=1`"
+                                                title="View"
+                                                aria-label="View"
+                                                class="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                                            >
+                                                <AppIcon name="eye" class="h-3.5 w-3.5" />
+                                            </Link>
+                                            <Link
+                                                :href="route('admin.submissions.show', s.id)"
+                                                title="Rate"
+                                                aria-label="Rate"
+                                                class="inline-flex h-7 w-7 items-center justify-center rounded-md bg-sky-600 text-white hover:bg-sky-700"
+                                            >
+                                                <AppIcon name="pencil" class="h-3.5 w-3.5" />
+                                            </Link>
+                                        </div>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="min-w-0 space-y-3 lg:col-span-7">
+                        <div class="flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
+                            <div>
+                                <h3 class="text-sm font-semibold text-slate-900">Approved</h3>
+                                <p class="text-xs text-slate-500">Approved packages by review date.</p>
+                            </div>
+                            <Link
+                                :href="route('admin.reports.ratings')"
+                                class="inline-flex items-center gap-1.5 text-xs font-semibold text-amber-800 hover:text-amber-950"
+                            >
+                                Open full report
+                                <AppIcon name="arrow-top-right" class="h-3.5 w-3.5" />
+                            </Link>
+                        </div>
+                        <RatingReportList
+                            :submissions="approvedRatings"
+                            :review-months="reviewMonths"
+                            filter-mode="client"
+                        />
+                    </div>
+                </div>
+
+                <div v-show="tab === 'registers'" class="grid gap-4 lg:grid-cols-12 lg:items-start">
+                    <div class="rounded-lg border border-slate-200 bg-white shadow-sm lg:col-span-6">
+                        <div class="flex items-center justify-between gap-3 border-b border-slate-100 px-3 py-2">
+                            <h3 class="text-sm font-semibold text-slate-800">Pending supervisor reports</h3>
+                            <p class="text-xs text-slate-500">{{ pendingRegisterReports.length }} report(s)</p>
+                        </div>
+                        <div v-if="!pendingRegisterReports.length" class="px-3 py-4 text-center text-xs text-slate-500">
+                            No supervisor reports waiting for review.
+                        </div>
+                        <table v-else class="w-full table-fixed divide-y divide-slate-200 text-xs">
+                            <thead class="bg-slate-50 text-left font-semibold uppercase tracking-wide text-slate-500">
+                                <tr>
+                                    <th class="px-3 py-2">Report</th>
+                                    <th class="w-[28%] px-3 py-2">Supervisor</th>
+                                    <th class="w-[16%] px-3 py-2 text-right">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-100">
+                                <tr v-for="report in pendingRegisterReports" :key="report.kind + '-' + report.id" class="hover:bg-slate-50/60">
+                                    <td class="px-3 py-1.5">
+                                        <p class="break-words font-medium text-slate-900">{{ report.title }}</p>
+                                        <p class="break-words text-[10px] text-slate-500">{{ report.kind_label }} · {{ report.evaluation_year }} · {{ report.entries_count }} row(s)</p>
+                                    </td>
+                                    <td class="px-3 py-1.5 text-slate-600">
+                                        <p class="break-words">{{ report.supervisor_name }}</p>
+                                        <p class="break-words text-[10px] text-slate-400">{{ formatWhen(report.submitted_at) }}</p>
+                                    </td>
+                                    <td class="px-3 py-1.5 text-right">
+                                        <Link
+                                            :href="report.show_url"
+                                            class="inline-flex items-center rounded-md bg-cyan-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-cyan-800"
+                                        >
+                                            Check
+                                        </Link>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="rounded-lg border border-slate-200 bg-white shadow-sm lg:col-span-6">
+                        <div class="flex items-center justify-between gap-3 border-b border-slate-100 px-3 py-2">
+                            <h3 class="text-sm font-semibold text-slate-800">Approved</h3>
+                            <p class="text-xs text-slate-500">{{ approvedRegisterReports.length }} report(s)</p>
+                        </div>
+                        <div v-if="!approvedRegisterReports.length" class="px-3 py-4 text-center text-xs text-slate-500">
+                            No approved supervisor reports yet.
+                        </div>
+                        <table v-else class="w-full table-fixed divide-y divide-slate-200 text-xs">
+                            <thead class="bg-slate-50 text-left font-semibold uppercase tracking-wide text-slate-500">
+                                <tr>
+                                    <th class="px-3 py-2">Report</th>
+                                    <th class="w-[28%] px-3 py-2">Supervisor</th>
+                                    <th class="w-[16%] px-3 py-2 text-right">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-100">
+                                <tr v-for="report in approvedRegisterReports" :key="'ok-' + report.kind + '-' + report.id" class="hover:bg-slate-50/60">
+                                    <td class="px-3 py-1.5">
+                                        <p class="break-words font-medium text-slate-900">{{ report.title }}</p>
+                                        <p class="break-words text-[10px] text-slate-500">{{ report.kind_label }} · {{ report.evaluation_year }}</p>
+                                    </td>
+                                    <td class="px-3 py-1.5 text-slate-600">
+                                        <p class="break-words">{{ report.supervisor_name }}</p>
+                                        <p class="break-words text-[10px] text-slate-400">{{ formatWhen(report.reviewed_at) }}</p>
+                                    </td>
+                                    <td class="px-3 py-1.5 text-right">
+                                        <Link
+                                            :href="report.show_url"
+                                            class="inline-flex items-center rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-800 hover:bg-slate-50"
+                                        >
+                                            View
+                                        </Link>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
 
                 <div v-show="tab === 'users'" class="space-y-4">
@@ -315,13 +517,6 @@ function destroyUser(id) {
 
                 <div v-show="tab === 'analytics'" class="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
                     <AdminAnalyticsPanel :analytics="analytics" />
-                </div>
-
-                <div v-show="tab === 'transfers'" class="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-                    <AdminTransferRequestsPanel
-                        :pending-requests="pendingTransferRequests"
-                        :recent-requests="recentTransferRequests"
-                    />
                 </div>
 
                 <div class="flex items-start gap-3 rounded-lg border border-amber-100 bg-amber-50 p-4 text-sm text-amber-900">

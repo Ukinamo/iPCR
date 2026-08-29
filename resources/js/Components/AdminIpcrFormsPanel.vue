@@ -3,6 +3,7 @@ import AppIcon from '@/Components/AppIcon.vue';
 import CommitmentPackageForm from '@/Components/CommitmentPackageForm.vue';
 import InputError from '@/Components/InputError.vue';
 import InputLabel from '@/Components/InputLabel.vue';
+import { flattenFormEntries } from '@/utils/ipcrFormEntries';
 import { Link, router, useForm } from '@inertiajs/vue3';
 import { ref } from 'vue';
 
@@ -40,6 +41,7 @@ function newEntry(functionType) {
         enabled: true,
         function_type: functionType,
         title: '',
+        _uid: `e-${functionType}-${Date.now()}-${Math.random()}`,
         items: [newItem()],
     };
 }
@@ -47,24 +49,12 @@ function newEntry(functionType) {
 const form = useForm({
     title: '',
     evaluation_year: props.period.year,
-    evaluation_quarter: props.period.quarter,
-    period_label: props.period.label,
+    included_quarters: [3, 4],
     entries: [newEntry('core'), newEntry('strategic')],
 });
 
 function flattenedEntries() {
-    return form.entries
-        .filter((entry) => entry.enabled)
-        .flatMap((entry) =>
-            (entry.items || []).map((item) => ({
-                function_type: entry.function_type,
-                title: entry.title,
-                description: item.description,
-                weight: item.weight === '' || item.weight == null ? null : item.weight,
-                annual_office_target: item.annual_office_target,
-                individual_annual_targets: item.individual_annual_targets,
-            })),
-        );
+    return flattenFormEntries(form.entries);
 }
 
 function startCreate() {
@@ -79,8 +69,7 @@ function save() {
     form.transform((data) => ({
         title: data.title,
         evaluation_year: data.evaluation_year,
-        evaluation_quarter: data.evaluation_quarter,
-        period_label: `Q${data.evaluation_quarter} ${data.evaluation_year}`,
+        included_quarters: (data.included_quarters || []).map((q) => Number(q)),
         entries: flattenedEntries(),
     })).post(route('admin.forms.store'), {
         preserveScroll: true,
@@ -88,22 +77,12 @@ function save() {
     });
 }
 
-function onQuarterChange() {
-    form.period_label = `Q${form.evaluation_quarter} ${form.evaluation_year}`;
-}
-
-function statusBadge(status) {
-    if (status === 'assigned') return 'bg-emerald-50 text-emerald-800 ring-emerald-100';
-    return 'bg-slate-50 text-slate-700 ring-slate-100';
-}
-
-function supervisorNames(formRow) {
-    const names = (formRow.supervisors || []).map((s) => s.name).filter(Boolean);
-    return names.length ? names.join(', ') : 'Not assigned';
+function statusBadge() {
+    return 'bg-emerald-50 text-emerald-800 ring-emerald-100';
 }
 
 function destroyForm(id) {
-    if (confirm('Remove this IPCR form? Employees who have not submitted yet will lose this assigned form.')) {
+    if (confirm('Remove this catalog form? Employee copies already started will not be deleted.')) {
         router.delete(route('admin.forms.destroy', id));
     }
 }
@@ -112,7 +91,7 @@ function destroyForm(id) {
 <template>
     <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
         <div class="flex items-center justify-between gap-3">
-            <h3 class="text-lg font-semibold text-slate-900">IPCR forms</h3>
+            <h3 class="text-lg font-semibold text-slate-900">IPCR form catalog</h3>
             <button
                 v-if="!creating"
                 type="button"
@@ -125,7 +104,7 @@ function destroyForm(id) {
         </div>
 
         <div v-if="creating" class="mt-4 space-y-4 border-t border-slate-100 pt-4">
-            <div class="grid gap-3 sm:grid-cols-3">
+            <div class="grid gap-3 sm:grid-cols-2">
                 <div>
                     <InputLabel value="Title (optional)" />
                     <input
@@ -143,22 +122,25 @@ function destroyForm(id) {
                         min="2000"
                         max="2100"
                         class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-amber-500 focus:ring-amber-500"
-                        @change="onQuarterChange"
                     />
                 </div>
-                <div>
-                    <InputLabel value="Quarter" />
-                    <select
-                        v-model="form.evaluation_quarter"
-                        class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-amber-500 focus:ring-amber-500"
-                        @change="onQuarterChange"
-                    >
-                        <option :value="1">Q1</option>
-                        <option :value="2">Q2</option>
-                        <option :value="3">Q3</option>
-                        <option :value="4">Q4</option>
-                    </select>
+            </div>
+
+            <div>
+                <InputLabel value="Include in accomplishments" />
+                <p class="mt-1 text-xs text-slate-500">Checked quarters show as Target/Actual columns, plus Total.</p>
+                <div class="mt-2 flex flex-wrap gap-4">
+                    <label v-for="q in [1, 2, 3, 4]" :key="q" class="inline-flex items-center gap-2 text-sm text-slate-800">
+                        <input
+                            v-model="form.included_quarters"
+                            type="checkbox"
+                            :value="q"
+                            class="rounded border-gray-300 text-amber-600 focus:ring-amber-500"
+                        />
+                        Q{{ q }}
+                    </label>
                 </div>
+                <InputError class="mt-1" :message="form.errors.included_quarters" />
             </div>
 
             <CommitmentPackageForm
@@ -188,21 +170,37 @@ function destroyForm(id) {
                             {{ row.period_label }}
                             · Core {{ Number(row.weight_summary?.core || 0).toFixed(0) }}%
                             / Strategic {{ Number(row.weight_summary?.strategic || 0).toFixed(0) }}%
-                            · {{ supervisorNames(row) }}
+                            · {{ row.items_count }} row(s)
                         </p>
                     </div>
-                    <div class="flex items-center gap-3">
-                        <span class="rounded-full px-2 py-0.5 text-xs font-semibold ring-1" :class="statusBadge(row.status)">
-                            {{ row.status }}
+                    <div class="flex items-center gap-1.5">
+                        <span class="rounded-full px-2 py-0.5 text-xs font-semibold ring-1" :class="statusBadge()">
+                            Available
                         </span>
-                        <Link :href="route('admin.forms.show', row.id)" class="text-sm font-semibold text-amber-700 hover:text-amber-800">
-                            View
+                        <Link
+                            :href="route('admin.forms.show', row.id)"
+                            title="View"
+                            aria-label="View"
+                            class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-amber-700 shadow-sm hover:bg-slate-50"
+                        >
+                            <AppIcon name="eye" class="h-4 w-4" />
                         </Link>
-                        <Link :href="route('admin.forms.edit', row.id)" class="text-sm font-semibold text-slate-600 hover:text-slate-900">
-                            Edit
+                        <Link
+                            :href="route('admin.forms.edit', row.id)"
+                            title="Edit"
+                            aria-label="Edit"
+                            class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50"
+                        >
+                            <AppIcon name="pencil" class="h-4 w-4" />
                         </Link>
-                        <button type="button" class="text-sm font-semibold text-rose-700 hover:text-rose-800" @click="destroyForm(row.id)">
-                            Delete
+                        <button
+                            type="button"
+                            title="Delete"
+                            aria-label="Delete"
+                            class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-rose-200 bg-white text-rose-700 shadow-sm hover:bg-rose-50"
+                            @click="destroyForm(row.id)"
+                        >
+                            <AppIcon name="trash" class="h-4 w-4" />
                         </button>
                     </div>
                 </div>

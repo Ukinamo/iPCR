@@ -16,10 +16,7 @@ final class IpcrFormViewDataBuilder
     {
         $submission->loadMissing(['commitments', 'employee', 'supervisor']);
 
-        $commitments = $submission->commitments->sortBy([
-            fn (Commitment $c) => $c->function_type === 'core' ? 0 : 1,
-            fn (Commitment $c) => $c->id,
-        ]);
+        $commitments = \App\Support\IpcrFunctionGroups::ordered($submission->commitments);
 
         $core = $commitments->where('function_type', 'core')->values();
         $strategic = $commitments->where('function_type', 'strategic')->values();
@@ -93,7 +90,7 @@ final class IpcrFormViewDataBuilder
      */
     private static function buildSection(string $label, Collection $commitments): array
     {
-        $groups = self::groupCommitmentsByTitle($commitments);
+        $groups = \App\Support\IpcrFunctionGroups::consecutive($commitments);
         $rows = [];
         $groupIndex = 0;
 
@@ -159,13 +156,13 @@ final class IpcrFormViewDataBuilder
     {
         $weightTotal = round((float) $commitments->sum(fn (Commitment $c) => $c->weight ?? 0), 2);
         $pct = self::totalAccomplishmentPercent($commitments);
-        $avgSum = round((float) $commitments->sum(fn (Commitment $c) => $c->weight !== null ? ($c->rating_average ?? 0) : 0), 2);
-        $weightedSum = round($commitments->sum(fn (Commitment $c) => self::weightedRemarkScore($c) ?? 0.0), 2);
+        $avgSum = round((float) $commitments->sum(fn (Commitment $c) => IpcrFormRatingCalculator::isRateableRow($c) ? ($c->rating_average ?? 0) : 0), 2);
+        $weightedSum = round($commitments->sum(fn (Commitment $c) => $c->weight !== null ? (self::weightedRemarkScore($c) ?? 0.0) : 0), 2);
 
         return [
             'weight' => $weightTotal > 0 ? self::formatWeight($weightTotal) : null,
             'percent' => $pct !== null ? number_format($pct, 2) : null,
-            'average' => $commitments->contains(fn (Commitment $c) => $c->weight !== null && $c->rating_average !== null)
+            'average' => $commitments->contains(fn (Commitment $c) => IpcrFormRatingCalculator::isRateableRow($c) && $c->rating_average !== null)
                 ? number_format($avgSum, 2)
                 : null,
             'weighted' => $commitments->contains(fn (Commitment $c) => self::weightedRemarkScore($c) !== null)
@@ -188,13 +185,13 @@ final class IpcrFormViewDataBuilder
             'q3_actual' => self::displayNum($c->rating_q3_actual, true),
             'q4_target' => self::displayNum($c->rating_q4_target, true),
             'q4_actual' => self::displayNum($c->rating_q4_actual, true),
-            'total_target' => self::displayNum($c->rating_target_total),
-            'total_actual' => self::displayNum($c->rating_actual_total),
+            'total_target' => self::displayNum($c->rating_target_total, true),
+            'total_actual' => self::displayNum($c->rating_actual_total, true),
             'percent' => $c->rating_percent !== null ? number_format((float) $c->rating_percent, 2) : null,
             'quality' => $c->rating_quality !== null ? (string) (int) $c->rating_quality : null,
             'efficiency' => $c->rating_efficiency !== null ? (string) (int) $c->rating_efficiency : null,
             'timeliness' => $c->rating_timeliness !== null ? (string) (int) $c->rating_timeliness : null,
-            'average' => $c->weight !== null && $c->rating_average !== null
+            'average' => IpcrFormRatingCalculator::isRateableRow($c) && $c->rating_average !== null
                 ? number_format((float) $c->rating_average, 2)
                 : null,
             'weighted' => self::weightedRemarkScore($c) !== null
@@ -204,27 +201,6 @@ final class IpcrFormViewDataBuilder
                 ? number_format(self::weightedRemarkScore($c), 2)
                 : null,
         ];
-    }
-
-    /**
-     * @param  Collection<int, Commitment>  $commitments
-     * @return list<list<Commitment>>
-     */
-    private static function groupCommitmentsByTitle(Collection $commitments): array
-    {
-        $order = [];
-        $groups = [];
-
-        foreach ($commitments as $commitment) {
-            $key = self::functionTitleKey($commitment);
-            if (! array_key_exists($key, $groups)) {
-                $order[] = $key;
-                $groups[$key] = [];
-            }
-            $groups[$key][] = $commitment;
-        }
-
-        return array_map(fn (string $key) => $groups[$key], $order);
     }
 
     private static function functionTitleKey(Commitment $c): string
@@ -271,7 +247,7 @@ final class IpcrFormViewDataBuilder
 
     private static function weightedRemarkScore(Commitment $c): ?float
     {
-        if ($c->weight === null) {
+        if (! IpcrFormRatingCalculator::isRateableRow($c)) {
             return null;
         }
 
@@ -280,10 +256,14 @@ final class IpcrFormViewDataBuilder
         }
 
         if ($c->rating_average !== null) {
-            return IpcrFormRatingCalculator::weightedFromAverageAndWeight(
-                (float) $c->rating_average,
-                (float) $c->weight,
-            );
+            if ($c->weight !== null) {
+                return IpcrFormRatingCalculator::weightedFromAverageAndWeight(
+                    (float) $c->rating_average,
+                    (float) $c->weight,
+                );
+            }
+
+            return round((float) $c->rating_average, 2);
         }
 
         return null;

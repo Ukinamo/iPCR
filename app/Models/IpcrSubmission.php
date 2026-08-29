@@ -14,6 +14,7 @@ class IpcrSubmission extends Model
         'supervisor_id',
         'evaluation_year',
         'evaluation_quarter',
+        'included_quarters',
         'status',
         'quality',
         'efficiency',
@@ -23,6 +24,9 @@ class IpcrSubmission extends Model
         'commitment_statement',
         'submitted_at',
         'reviewed_at',
+        'batch_id',
+        'title',
+        'ipcr_form_template_id',
     ];
 
     protected function casts(): array
@@ -32,6 +36,7 @@ class IpcrSubmission extends Model
             'submitted_at' => 'datetime',
             'reviewed_at' => 'datetime',
             'overall_rating' => 'decimal:2',
+            'included_quarters' => 'array',
         ];
     }
 
@@ -43,6 +48,11 @@ class IpcrSubmission extends Model
     public function supervisor(): BelongsTo
     {
         return $this->belongsTo(User::class, 'supervisor_id');
+    }
+
+    public function sourceTemplate(): BelongsTo
+    {
+        return $this->belongsTo(IpcrFormTemplate::class, 'ipcr_form_template_id');
     }
 
     public function commitments(): HasMany

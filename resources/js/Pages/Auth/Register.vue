@@ -97,7 +97,7 @@ const submit = () => {
             <div class="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
                 <p class="font-semibold">Administrator approval required</p>
                 <p class="mt-1 text-amber-900/90">
-                    After you register, an administrator will review your account and assign a supervisor. You can sign in once your registration has been approved.
+                    After you register, an administrator will review your account. You can sign in once your registration has been approved.
                 </p>
             </div>
 

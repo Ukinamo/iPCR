@@ -8,7 +8,6 @@ import { Head, Link, useForm } from '@inertiajs/vue3';
 
 const props = defineProps({
     user: Object,
-    supervisors: Array,
 });
 
 const form = useForm({
@@ -17,13 +16,11 @@ const form = useForm({
     password: '',
     role: props.user.role,
     account_status: props.user.account_status,
-    supervisor_id: props.user.supervisor_id ?? '',
 });
 
 function submit() {
     form.transform((data) => ({
         ...data,
-        supervisor_id: data.role === 'employee' && data.supervisor_id ? data.supervisor_id : null,
         password: data.password || null,
     })).patch(route('admin.users.update', props.user.id));
 }
@@ -80,14 +77,6 @@ function submit() {
                                 <option value="pending">Pending</option>
                                 <option value="inactive">Inactive</option>
                             </select>
-                        </div>
-                        <div v-if="form.role === 'employee'">
-                            <InputLabel for="supervisor_id" value="Supervisor" />
-                            <select id="supervisor_id" v-model="form.supervisor_id" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
-                                <option value="">Select supervisor</option>
-                                <option v-for="s in supervisors" :key="s.id" :value="s.id">{{ s.name }} — {{ s.email }}</option>
-                            </select>
-                            <InputError class="mt-2" :message="form.errors.supervisor_id" />
                         </div>
                         <div class="md:col-span-2">
                             <PrimaryButton class="bg-amber-600 hover:bg-amber-700 focus:ring-amber-500" :disabled="form.processing">Save changes</PrimaryButton>

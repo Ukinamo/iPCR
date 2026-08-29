@@ -1,6 +1,7 @@
 <script setup>
 import IpcrPreviewLink from '@/Components/IpcrPreviewLink.vue';
 import { formatDecimal, formatWholeNumber } from '@/utils/numberFormat';
+import { isRateableRow } from '@/utils/ipcrRating';
 
 defineProps({
     submission: {
@@ -20,7 +21,7 @@ function period(s) {
 function submissionTotals(submission) {
     const rows = submission?.commitments || [];
     const weight = rows.reduce((sum, c) => sum + Number(c.weight || 0), 0);
-    const rated = rows.filter((c) => c.weight != null);
+    const rated = rows.filter((c) => isRateableRow(c));
     const average = rated.reduce((sum, c) => sum + Number(c.rating_average || 0), 0);
     const weighted = rated.reduce((sum, c) => sum + Number(c.rating_weighted || 0), 0);
     return {
@@ -38,21 +39,24 @@ function indicatorLines(c) {
 }
 
 function formatAverage(c) {
-    if (c?.weight == null) {
+    if (!isRateableRow(c)) {
         return '—';
     }
     return formatDecimal(c?.rating_average, 2);
 }
 
 function formatWeighted(c) {
-    if (c?.weight == null) {
+    if (!isRateableRow(c)) {
         return '—';
     }
     if (c?.rating_weighted != null) {
         return formatDecimal(c.rating_weighted, 2);
     }
     if (c?.rating_average != null) {
-        return formatDecimal(Number(c.rating_average) * (Number(c.weight) / 100), 2);
+        if (c?.weight != null) {
+            return formatDecimal(Number(c.rating_average) * (Number(c.weight) / 100), 2);
+        }
+        return formatDecimal(c.rating_average, 2);
     }
     return '—';
 }

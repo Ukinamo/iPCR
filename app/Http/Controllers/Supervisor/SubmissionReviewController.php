@@ -76,18 +76,20 @@ class SubmissionReviewController extends Controller
             'commitments' => ['required', 'array', 'min:1'],
             'commitments.*.id' => ['nullable', 'integer'],
             'commitments.*.function_type' => ['required', 'in:core,strategic'],
+            'commitments.*.function_group' => ['nullable', 'integer', 'min:0'],
+            'commitments.*.sort_order' => ['nullable', 'integer', 'min:0'],
             'commitments.*.title' => ['nullable', 'string', 'max:255'],
             'commitments.*.description' => ['nullable', 'string', 'max:8000'],
             'commitments.*.weight' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'commitments.*.annual_office_target' => ['nullable', 'string', 'max:255'],
             'commitments.*.individual_annual_targets' => ['nullable', 'string', 'max:255'],
-            'commitments.*.rating_quality' => ['nullable', 'integer', 'min:1', 'max:5'],
-            'commitments.*.rating_efficiency' => ['nullable', 'integer', 'min:1', 'max:5'],
-            'commitments.*.rating_timeliness' => ['nullable', 'integer', 'min:1', 'max:5'],
-            'commitments.*.rating_q3_target' => ['nullable', 'numeric', 'min:0'],
-            'commitments.*.rating_q3_actual' => ['nullable', 'numeric', 'min:0'],
-            'commitments.*.rating_q4_target' => ['nullable', 'numeric', 'min:0'],
-            'commitments.*.rating_q4_actual' => ['nullable', 'numeric', 'min:0'],
+            'commitments.*.rating_quality' => ['nullable', 'integer', 'min:0', 'max:5'],
+            'commitments.*.rating_efficiency' => ['nullable', 'integer', 'min:0', 'max:5'],
+            'commitments.*.rating_timeliness' => ['nullable', 'integer', 'min:0', 'max:5'],
+            'commitments.*.rating_q3_target' => ['nullable', 'integer', 'min:0'],
+            'commitments.*.rating_q3_actual' => ['nullable', 'integer', 'min:0'],
+            'commitments.*.rating_q4_target' => ['nullable', 'integer', 'min:0'],
+            'commitments.*.rating_q4_actual' => ['nullable', 'integer', 'min:0'],
         ]);
 
         $data = $base;
@@ -122,11 +124,13 @@ class SubmissionReviewController extends Controller
             $incomingIds = [];
             $synced = collect();
 
-            foreach ($data['commitments'] as $row) {
+            foreach ($data['commitments'] as $index => $row) {
                 $payload = [
                     'title' => filled($row['title'] ?? null) ? $row['title'] : null,
                     'description' => $row['description'] ?? null,
                     'function_type' => $row['function_type'],
+                    'sort_order' => (int) ($row['sort_order'] ?? $index),
+                    'function_group' => (int) ($row['function_group'] ?? $index),
                     'weight' => isset($row['weight']) && $row['weight'] !== '' && $row['weight'] !== null
                         ? round((float) $row['weight'], 2)
                         : null,
@@ -170,7 +174,7 @@ class SubmissionReviewController extends Controller
                 $commitment = $item['model']->fresh();
                 $row = $item['row'];
 
-                if ($data['action'] === 'approve' && $commitment->weight !== null) {
+                if ($data['action'] === 'approve' && IpcrFormRatingCalculator::isRateableRow($commitment, $row)) {
                     foreach (['rating_quality', 'rating_efficiency', 'rating_timeliness'] as $field) {
                         if (! isset($row[$field]) || ! is_numeric($row[$field])) {
                             $auto = IpcrFormRatingCalculator::totalsFromQ3Q4(
@@ -181,7 +185,7 @@ class SubmissionReviewController extends Controller
                             );
                             if ($auto['percent'] === null) {
                                 throw ValidationException::withMessages([
-                                    'commitments' => 'Every commitment with a weight must have accomplishments so Quality, Efficiency, and Timeliness can be rated (1–5).',
+                                    'commitments' => 'Every commitment with an Annual Office Target must have accomplishments so Quality, Efficiency, and Timeliness can be rated (0–5).',
                                 ]);
                             }
                         }
