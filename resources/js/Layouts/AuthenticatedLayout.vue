@@ -33,7 +33,7 @@ const accent = computed(() => (page.props.auth?.user?.role === 'administrator' ?
                         <div class="flex">
                             <div class="flex shrink-0 items-center">
                                 <Link :href="route('dashboard')" class="flex items-center gap-2">
-                                    <img src="/storage/hero/ipcrloogo.png" alt="I-PERFORM logo" class="h-9 w-9 rounded-md object-contain" />
+                                    <img src="/images/ipcrloogo.png" alt="I-PERFORM logo" class="h-9 w-9 rounded-md object-contain" />
                                     <span class="text-lg font-bold tracking-tight text-slate-900">I-PERFORM</span>
                                 </Link>
                             </div>
