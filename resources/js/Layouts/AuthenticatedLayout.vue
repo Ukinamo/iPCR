@@ -33,14 +33,7 @@ const accent = computed(() => (page.props.auth?.user?.role === 'administrator' ?
                         <div class="flex">
                             <div class="flex shrink-0 items-center">
                                 <Link :href="route('dashboard')" class="flex items-center gap-2">
-                                    <span
-                                        class="flex h-9 w-9 items-center justify-center rounded-md text-white"
-                                        :class="accent"
-                                    >
-                                        <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                            <path d="M5 13l4 4L19 7" stroke-linecap="round" stroke-linejoin="round" />
-                                        </svg>
-                                    </span>
+                                    <img src="/storage/hero/ipcrloogo.png" alt="I-PERFORM logo" class="h-9 w-9 rounded-md object-contain" />
                                     <span class="text-lg font-bold tracking-tight text-slate-900">I-PERFORM</span>
                                 </Link>
                             </div>

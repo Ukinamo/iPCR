@@ -180,9 +180,7 @@ onUnmounted(() => {
         <header class="shrink-0 border-b border-slate-200 bg-white/80 backdrop-blur-md">
             <div class="mx-auto flex max-w-6xl items-center justify-between px-4 py-2.5 sm:px-6 lg:px-8">
                 <Link href="/" class="flex items-center gap-2">
-                    <span class="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-600 shadow-md shadow-blue-600/20">
-                        <AppIcon name="clipboard" class="h-4 w-4 text-white" />
-                    </span>
+                    <img src="/storage/hero/ipcrloogo.png" alt="I-PERFORM logo" class="h-9 w-9 rounded-lg object-contain" />
                     <div>
                         <span class="block text-base font-bold tracking-tight text-slate-900 sm:text-lg">I-PERFORM</span>
                         <span class="hidden text-[10px] font-medium uppercase tracking-wider text-slate-500 sm:block">IPCR Management</span>

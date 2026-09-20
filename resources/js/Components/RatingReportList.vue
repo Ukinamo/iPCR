@@ -174,8 +174,8 @@ function applyMonthFilter() {
             No approved IPCR ratings found for this filter.
         </div>
 
-        <div v-else class="w-full rounded-xl border border-slate-200 bg-white shadow-sm">
-            <table class="w-full table-fixed divide-y divide-slate-200 text-sm">
+        <div v-else class="w-full overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+            <table class="min-w-[720px] w-full table-fixed divide-y divide-slate-200 text-sm">
                 <thead class="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                     <tr>
                         <th class="w-[16%] px-3 py-3">Period</th>
